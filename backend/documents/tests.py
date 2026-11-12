@@ -1,4 +1,5 @@
 import numpy as np
+import json
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -229,3 +230,32 @@ class ExportEndpointTests(TestCase):
         export = DocumentExport.objects.get(pk=response.json()['id'])
         self.assertEqual(export.reconstruction_mode, 'original')
         self.assertTrue(export.file.storage.exists(export.file.name))
+
+
+class HumanCorrectionTests(TestCase):
+    def setUp(self):
+        self.document = Document.objects.create(
+            uploaded_file='documents/correction-test.png',
+            status='completed',
+            extracted_text='TOTAL $12.50',
+            document_data={
+                'version': 1,
+                'blocks': [{'type': 'summary', 'fields': {}, 'items': [], 'review_flags': []}],
+            },
+        )
+
+    def test_saves_corrected_text_and_verified_financial_field(self):
+        response = self.client.patch(
+            f'/api/documents/{self.document.id}/corrections/',
+            data=json.dumps({
+                'corrected_text': 'TOTAL $12.60',
+                'verified_fields': {'total': 12.60},
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.corrected_text, 'TOTAL $12.60')
+        total = self.document.document_data['blocks'][0]['fields']['total']
+        self.assertEqual(total['value'], 12.60)
+        self.assertTrue(total['verified_by_user'])

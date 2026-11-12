@@ -1,4 +1,5 @@
 
+import os
 import time
 
 import easyocr
@@ -8,10 +9,19 @@ import easyocr
 # 1. INITIALIZE EASYOCR
 # ==========================================
 
-reader = easyocr.Reader(
-    ['en'],
-    gpu=False
+OCR_LANGUAGES = tuple(
+    language.strip() for language in os.environ.get('OCR_LANGUAGES', 'en').split(',') if language.strip()
 )
+
+reader = None
+
+
+def get_reader():
+    """Load the OCR model on first use, not during Django startup or tests."""
+    global reader
+    if reader is None:
+        reader = easyocr.Reader(OCR_LANGUAGES or ['en'], gpu=False, verbose=False)
+    return reader
 
 
 # ==========================================
@@ -25,7 +35,7 @@ def extract_text(image):
     weak. Greedy decoding keeps ordinary uploads responsive; exhaustive model
     comparisons belong in the offline CER/WER benchmark instead.
     """
-    results = reader.readtext(
+    results = get_reader().readtext(
         image,
         decoder='greedy',
         canvas_size=2048,

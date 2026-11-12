@@ -6,9 +6,10 @@ from rest_framework.decorators import api_view
 from rest_framework.parsers import MultiPartParser,FormParser
 
 from .models import Document
-from .serializers import DocumentExportSerializer, DocumentListSerializer, DocumentSerializers, ExportRequestSerializer
+from .serializers import DocumentCorrectionSerializer, DocumentExportSerializer, DocumentListSerializer, DocumentSerializers, ExportRequestSerializer
 from .services.document_processing import process_document
 from .services.export_service import create_export
+from .services.correction_service import apply_human_correction
 
 class HealthCheckView(APIView):
     def get(self,request):
@@ -57,3 +58,15 @@ def document_export_view(request, pk):
     except ValueError as exc:
         return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
     return Response(DocumentExportSerializer(export, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+def document_correction_view(request, pk):
+    document = generics.get_object_or_404(Document, pk=pk)
+    correction = DocumentCorrectionSerializer(data=request.data)
+    correction.is_valid(raise_exception=True)
+    try:
+        document = apply_human_correction(document, **correction.validated_data)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(DocumentSerializers(document, context={'request': request}).data)

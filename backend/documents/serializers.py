@@ -91,3 +91,8 @@ class DocumentExportSerializer(serializers.ModelSerializer):
 class ExportRequestSerializer(serializers.Serializer):
     format = serializers.ChoiceField(choices=('pdf', 'docx'))
     reconstruction_mode = serializers.ChoiceField(choices=('original', 'clean'))
+
+
+class DocumentCorrectionSerializer(serializers.Serializer):
+    corrected_text = serializers.CharField(required=False, allow_blank=True, max_length=100000)
+    verified_fields = serializers.DictField(required=False)

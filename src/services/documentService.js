@@ -34,6 +34,14 @@ export async function exportDocument(id, format, reconstructionMode) {
   return response.data
 }
 
+export async function saveDocumentCorrection(id, correctedText, verifiedFields = {}) {
+  const response = await api.patch(`/documents/${id}/corrections/`, {
+    corrected_text: correctedText,
+    verified_fields: verifiedFields,
+  })
+  return response.data
+}
+
 export function resolveImageUrl(value) {
   if (!value) return ''
   if (/^https?:\/\//i.test(value)) return value
