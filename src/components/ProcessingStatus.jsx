@@ -1,0 +1,8 @@
+import { CheckCircle2, CircleDashed, LoaderCircle, Upload } from 'lucide-react'
+
+export default function ProcessingStatus({ state, response }) {
+  if (state === 'idle') return null
+  const uploading = state === 'uploading'
+  return <section className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-5 dark:border-indigo-500/20 dark:bg-indigo-500/10"><div className="flex gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900">{uploading ? <LoaderCircle className="animate-spin" size={19}/> : <CheckCircle2 size={19}/>}</span><div><h3 className="font-semibold">{uploading ? 'Uploading document' : 'Upload complete'}</h3><p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{uploading ? 'Sending your image securely to the DocuScan API.' : `The API returned a document record${response?.status ? ` with status “${response.status}”` : ''}.`}</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Stage icon={Upload} label="Image uploaded" active={state === 'complete'} pending={uploading}/><Stage icon={CircleDashed} label="OCR processing" note="Not exposed by this API yet" /></div></section>
+}
+function Stage({ icon: Icon, label, active, pending, note }) { return <div className="flex items-center gap-2 rounded-xl bg-white/75 px-3 py-3 text-sm dark:bg-slate-900/70"><Icon size={16} className={active ? 'text-emerald-500' : pending ? 'animate-spin text-indigo-500' : 'text-slate-400'} /><span className="font-medium">{label}</span>{note && <span className="ml-auto text-[11px] text-slate-400">{note}</span>}</div> }

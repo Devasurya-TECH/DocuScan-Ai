@@ -1,0 +1,4 @@
+export default function StatCard({ label, value, helper, icon: Icon, tone = 'indigo' }) {
+  const tones = { indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15', emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15', rose: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15', violet: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15' }
+  return <article className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_12px_rgba(15,23,42,.035)] dark:border-slate-800 dark:bg-[#111a2b]"><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className="mt-2 text-3xl font-bold tracking-tight">{value}</p></div><span className={`grid h-10 w-10 place-items-center rounded-xl ${tones[tone]}`}><Icon size={19}/></span></div><p className="mt-3 text-xs text-slate-400">{helper}</p></article>
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "description": "Printed-document benchmark. Add one record only after its matching text file has been manually verified against the visible source image.",
+  "categories": [
+    "retail_receipts",
+    "invoices_bills",
+    "printed_forms",
+    "printed_pages"
+  ],
+  "splits": {
+    "development_per_category": 7,
+    "holdout_per_category": 3
+  },
+  "samples": []
+}

@@ -1,0 +1,22 @@
+# JavaScript dependencies and build output
+node_modules/
+dist/
+
+# Python environments, caches, and local Django state
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+
+# Runtime files and generated evaluation output
+tmp/
+media/
+backend/documents/evaluation/results/
+
+# Local configuration and editor artifacts
+.env
+.env.*
+!.env.example
+*.log
+*.swp
+.DS_Store
