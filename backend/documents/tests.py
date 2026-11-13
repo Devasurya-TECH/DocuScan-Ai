@@ -13,6 +13,9 @@ from .services.document_representation import build_document_representation, val
 from .services.reconstruction_service import reconstruct_original_layout
 from .services.reconstruction_service import reconstruct_clean_layout
 from .services.document_processing import select_ocr_candidate
+from .services.ocr.model_registry import get_engine
+from .services.ocr.ocr_router import resolve_engine
+from .services.ocr.result_normalizer import normalize_detection
 from .services.ocr_evaluation import error_rate, evaluate_ocr
 
 
@@ -26,6 +29,27 @@ class OcrEvaluationTests(SimpleTestCase):
 
     def test_word_error_rate_detects_incorrect_word(self):
         self.assertEqual(error_rate('one two', 'one three', 'word'), 0.5)
+
+
+class OCRArchitectureTests(SimpleTestCase):
+    def test_normalizes_engine_output_into_the_document_schema(self):
+        detection = normalize_detection(
+            engine='example', model_name='example-v1', text='TOTAL 12.50', confidence=1.3,
+            bounding_box=[[1, 2], [30, 2], [30, 15], [1, 15]], language='en',
+        )
+        self.assertEqual(detection['engine'], 'example')
+        self.assertEqual(detection['confidence'], 1.0)
+        self.assertEqual(detection['region_type'], 'printed_text')
+        self.assertEqual(detection['bounding_box'][0], [1, 2])
+
+    def test_unavailable_optional_engine_uses_easyocr_fallback(self):
+        engine, warnings = resolve_engine('paddleocr')
+        self.assertEqual(engine.name, 'easyocr')
+        self.assertTrue(warnings)
+
+    def test_registry_rejects_unknown_engine(self):
+        with self.assertRaises(ValueError):
+            get_engine('not-an-engine')
 
 
 class ImageEnhancementTests(SimpleTestCase):

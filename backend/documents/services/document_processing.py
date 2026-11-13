@@ -9,7 +9,7 @@ from .image_processing import (
     load_image,
 )
 from .image_enhancement import assess_quality, build_ocr_variants
-from .ocr_service import OCR_LANGUAGES, run_ocr
+from .ocr_service import run_ocr
 from .document_representation import build_document_representation
 
 
@@ -107,7 +107,10 @@ def process_document(document):
         sum(item['confidence'] for item in detections) / len(detections)
         if detections else None
     )
-    document.ocr_engine = f"easyocr:{','.join(OCR_LANGUAGES)}"
+    if detections:
+        document.ocr_engine = f"{detections[0].get('engine', 'unknown')}:{detections[0].get('model_name', 'unknown')}"
+    else:
+        document.ocr_engine = 'unknown'
     document.processing_strategy = selected['strategy']
     document.boundary_detected = scan_image is not source_image
     document.quality_metrics = {

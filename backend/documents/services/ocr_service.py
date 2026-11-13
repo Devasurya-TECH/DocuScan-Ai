@@ -1,78 +1,23 @@
+"""Backward-compatible entry points for the modular OCR architecture."""
 
-import os
-import time
-
-import easyocr
+from .ocr.ocr_router import configured_languages, run
 
 
-# ==========================================
-# 1. INITIALIZE EASYOCR
-# ==========================================
+OCR_LANGUAGES = configured_languages()
 
-OCR_LANGUAGES = tuple(
-    language.strip() for language in os.environ.get('OCR_LANGUAGES', 'en').split(',') if language.strip()
-)
-
-reader = None
-
-
-def get_reader():
-    """Load the OCR model on first use, not during Django startup or tests."""
-    global reader
-    if reader is None:
-        reader = easyocr.Reader(OCR_LANGUAGES or ['en'], gpu=False, verbose=False)
-    return reader
-
-
-# ==========================================
-# 2. EXTRACT TEXT
-# ==========================================
 
 def extract_text(image):
-    """Use a balanced OCR configuration suitable for synchronous uploads.
-
-    The pipeline can selectively try a recovery image when the first pass is
-    weak. Greedy decoding keeps ordinary uploads responsive; exhaustive model
-    comparisons belong in the offline CER/WER benchmark instead.
-    """
-    results = get_reader().readtext(
-        image,
-        decoder='greedy',
-        canvas_size=2048,
-        mag_ratio=1.0,
-        contrast_ths=0.08,
-        adjust_contrast=0.7,
-        text_threshold=0.55,
-        low_text=0.25,
-        link_threshold=0.35,
-    )
-
-    extracted_data = []
-
-    for result in results:
-
-        bounding_box = result[0]
-        text = result[1]
-        confidence = result[2]
-
-        extracted_data.append({
-
-            "text": text,
-
-            "confidence": float(confidence),
-
-            "bounding_box": [
-                [int(point[0]), int(point[1])]
-                for point in bounding_box
-            ]
-
-        })
-
-    return extracted_data
+    """Return normalized detections using the configured OCR engine."""
+    detections, _, _, _ = run(image)
+    return detections
 
 
 def run_ocr(image):
-    """Run the current OCR engine and return results plus measured elapsed time."""
-    started = time.perf_counter()
-    detections = extract_text(image)
-    return detections, time.perf_counter() - started
+    """Preserve the legacy `(detections, elapsed_seconds)` OCR contract."""
+    detections, elapsed, _, _ = run(image)
+    return detections, elapsed
+
+
+def run_ocr_detailed(image, engine_name=None):
+    """Return detections, timing, selected engine identity, and router warnings."""
+    return run(image, engine_name)

@@ -10,7 +10,11 @@ analysis, structured field extraction, and export to PDF or editable DOCX.
 - Detect document boundaries and correct perspective when a page is visible.
 - Improve scans with resizing, contrast enhancement, deskewing, and adaptive
   thresholding.
-- Extract text with EasyOCR and retain word-level bounding boxes and confidence.
+- Route OCR through a model-independent adapter interface with normalized
+  engine/model, language, confidence, box, warning, and raw-metadata fields.
+- Keep EasyOCR as the verified local baseline; expose safe optional adapter
+  boundaries for PaddleOCR and line-level TrOCR without making unsupported
+  dependencies mandatory.
 - Start with a fast colour OCR pass; use recovery preprocessing only when the
   initial result is weak.
 - Analyse reading order, headings, paragraphs, candidate tables, and document
@@ -19,6 +23,8 @@ analysis, structured field extraction, and export to PDF or editable DOCX.
   tax, currency, and total without inventing missing values.
 - Preserve document history, OCR metadata, confidence, processing duration, and
   quality metrics.
+- Allow human review: users can correct extracted text, retain original OCR
+  evidence, and save verified structured fields.
 - Export two reconstruction modes:
   - **Original layout:** approximate the detected geometry while preserving
     editable text.
@@ -90,6 +96,9 @@ the production value of `DJANGO_SECRET_KEY`.
 DJANGO_SECRET_KEY=replace-with-a-long-random-production-secret
 DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=your-domain.example.com
+OCR_LANGUAGES=en
+OCR_DEFAULT_ENGINE=easyocr
+OCR_DEVICE=cpu
 ```
 
 ## API overview
@@ -101,6 +110,7 @@ DJANGO_ALLOWED_HOSTS=your-domain.example.com
 | `GET` | `/api/documents/` | List document history |
 | `GET` | `/api/documents/<id>/` | Read document details and OCR data |
 | `DELETE` | `/api/documents/<id>/` | Delete a document record |
+| `PATCH` | `/api/documents/<id>/corrections/` | Save human-corrected text and verified fields |
 | `POST` | `/api/documents/<id>/export/` | Create a PDF or DOCX export |
 
 Example export request:
