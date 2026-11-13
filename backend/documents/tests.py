@@ -283,3 +283,10 @@ class HumanCorrectionTests(TestCase):
         total = self.document.document_data['blocks'][0]['fields']['total']
         self.assertEqual(total['value'], 12.60)
         self.assertTrue(total['verified_by_user'])
+
+
+class FrontendServingTests(TestCase):
+    def test_django_serves_the_built_react_application_at_root(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<div id="root"></div>', html=False)
