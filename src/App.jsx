@@ -6,6 +6,7 @@ import NewScan from './pages/NewScan'
 import Documents from './pages/Documents'
 import DocumentDetails from './pages/DocumentDetails'
 import Settings from './pages/Settings'
+import { LanguageProvider } from './i18n'
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('docuscan-theme') || 'light')
@@ -14,7 +15,7 @@ export default function App() {
     localStorage.setItem('docuscan-theme', theme)
   }, [theme])
 
-  return <AppShell theme={theme} setTheme={setTheme}>
+  return <LanguageProvider><AppShell theme={theme} setTheme={setTheme}>
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/scan" element={<NewScan />} />
@@ -24,5 +25,5 @@ export default function App() {
       <Route path="/settings" element={<Settings theme={theme} setTheme={setTheme} />} />
       <Route path="*" element={<Dashboard />} />
     </Routes>
-  </AppShell>
+  </AppShell></LanguageProvider>
 }
