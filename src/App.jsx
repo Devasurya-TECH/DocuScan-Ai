@@ -21,7 +21,6 @@ export default function App() {
       <Route path="/scan" element={<NewScan />} />
       <Route path="/documents" element={<Documents />} />
       <Route path="/documents/:id" element={<DocumentDetails />} />
-      <Route path="/history" element={<Documents history />} />
       <Route path="/settings" element={<Settings theme={theme} setTheme={setTheme} />} />
       <Route path="*" element={<Dashboard />} />
     </Routes>

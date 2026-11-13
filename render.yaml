@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: docuscan-ai
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: OCR_DEFAULT_ENGINE
+        value: paddleocr
+      - key: OCR_LANGUAGES
+        value: en,hi
+      - key: OCR_DEVICE
+        value: cpu
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+    disk:
+      name: docuscan-media
+      mountPath: /app/backend/media
+      sizeGB: 1
