@@ -3,14 +3,12 @@ from pathlib import Path
 import cv2
 from django.core.files.base import ContentFile
 
-from .image_processing import (
-    correct_perspective,
-    find_document_corners,
-    load_image,
-)
-from .image_enhancement import assess_quality, build_ocr_variants
+from .image_processing import correct_perspective, load_image
+from .image_enhancement import assess_quality, build_ocr_variants, recovery_strategies
 from .ocr_service import run_ocr
 from .document_representation import build_document_representation
+from .capture_analysis import find_safe_document_boundary
+from .script_detection import annotate_detection_languages
 
 
 # Benchmarks can include every variant. The upload path intentionally limits
@@ -46,12 +44,12 @@ def _candidate_score(detections):
     return round(weighted_confidence + (coverage * 0.08) - (weak_fragments * 0.5), 6)
 
 
-def select_ocr_candidate(image):
+def select_ocr_candidate(image, languages=None):
     """Use one fast pass, then recover only when its signal is weak."""
     candidates = []
     def add_candidates(strategy_names):
         for strategy, candidate_image in build_ocr_variants(image, strategy_names).items():
-            detections, elapsed = run_ocr(candidate_image)
+            detections, elapsed = run_ocr(candidate_image, languages=languages)
             confidences = [item['confidence'] for item in detections]
             candidates.append({
                 'strategy': strategy,
@@ -69,11 +67,11 @@ def select_ocr_candidate(image):
         or primary['average_confidence'] is None
         or primary['average_confidence'] < RECOVERY_CONFIDENCE_THRESHOLD
     ):
-        add_candidates(RECOVERY_OCR_VARIANTS)
+        add_candidates(recovery_strategies(assess_quality(image)))
     return max(candidates, key=lambda candidate: candidate['score']), candidates
 
 
-def process_document(document):
+def process_document(document, languages=None):
     """Create the enhanced scan and OCR data for a saved document record.
 
     Boundary detection is best-effort: a valid image that has no detectable page
@@ -81,13 +79,15 @@ def process_document(document):
     """
     source_image = load_image(document.uploaded_file.path)
 
+    corners, capture = find_safe_document_boundary(source_image)
     try:
-        corners = find_document_corners(source_image)
+        if corners is None:
+            raise ValueError('No safe perspective boundary')
         scan_image = correct_perspective(source_image, corners)
     except ValueError:
         scan_image = source_image
 
-    selected, candidates = select_ocr_candidate(scan_image)
+    selected, candidates = select_ocr_candidate(scan_image, languages=languages)
     processed_image = selected['image']
     encoded, data = cv2.imencode('.png', processed_image)
     if not encoded:
@@ -101,6 +101,7 @@ def process_document(document):
     )
 
     detections = selected['detections']
+    script_metadata = annotate_detection_languages(detections)
     document.ocr_results = detections
     document.extracted_text = '\n'.join(item['text'] for item in detections)
     document.average_confidence = (
@@ -112,9 +113,11 @@ def process_document(document):
     else:
         document.ocr_engine = 'unknown'
     document.processing_strategy = selected['strategy']
-    document.boundary_detected = scan_image is not source_image
+    document.boundary_detected = corners is not None
     document.quality_metrics = {
         **assess_quality(source_image),
+        'capture': capture,
+        'script_detection': script_metadata,
         'ocr_candidates': [
             {
                 'strategy': candidate['strategy'],

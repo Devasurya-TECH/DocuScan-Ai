@@ -24,9 +24,10 @@ class DocumentUploadView(generics.CreateAPIView):
     parser_classes=[MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
+        languages = tuple(language.strip() for language in serializer.validated_data.pop('ocr_languages', '').split(',') if language.strip()) or None
         document = serializer.save(status='processing')
         try:
-            process_document(document)
+            process_document(document, languages=languages)
         except Exception as exc:
             document.status = 'failed'
             document.failure_reason = str(exc)[:1000]

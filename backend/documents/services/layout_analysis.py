@@ -68,7 +68,7 @@ def _same_line(element, line, tolerance):
     return overlap_ratio >= 0.35 or abs(element_center - line_center) <= tolerance
 
 
-def group_into_lines(elements):
+def group_into_lines(elements, page_width=None):
     """Group detections with aligned vertical extents, retaining every box."""
     if not elements:
         return []
@@ -84,9 +84,28 @@ def group_into_lines(elements):
         else:
             provisional.append({'elements': [element], 'position': dict(element['position'])})
 
-    lines = []
-    for index, line in enumerate(sorted(provisional, key=lambda item: item['position']['y'])):
+    split_lines = []
+    for line in provisional:
         entries = sorted(line['elements'], key=lambda item: item['position']['x'])
+        current = [entries[0]]
+        for entry in entries[1:]:
+            previous = current[-1]
+            gap = entry['position']['x'] - _right(previous['position'])
+            # Newspaper columns often arrive as same-baseline detections. Split
+            # only a very wide gap, never a receipt description/price pair.
+            should_split = (
+                page_width and gap > page_width * 0.22
+                and not PRICE_PATTERN.match(entry['text'].replace(' ', ''))
+            )
+            if should_split:
+                split_lines.append(current)
+                current = [entry]
+            else:
+                current.append(entry)
+        split_lines.append(current)
+
+    lines = []
+    for index, entries in enumerate(sorted(split_lines, key=lambda items: (min(item['position']['y'] for item in items), min(item['position']['x'] for item in items)))):
         lines.append({
             'id': f'line_{index}',
             'text': ' '.join(item['text'] for item in entries),
@@ -115,6 +134,21 @@ def _detect_columns(lines, page_width):
         {'id': 'column_0', 'position': {'x': 0, 'y': 0, 'width': int(midpoint), 'height': None}},
         {'id': 'column_1', 'position': {'x': int(midpoint), 'y': 0, 'width': int(page_width - midpoint), 'height': None}},
     ]
+
+
+def reading_order(lines, columns):
+    """Read a multi-column page down each column, not across both columns."""
+    if len(columns) < 2:
+        return [line['id'] for line in sorted(lines, key=lambda item: (item['position']['y'], item['position']['x']))]
+    ordered = []
+    for column in columns:
+        left = column['position']['x']
+        right = left + column['position']['width']
+        members = [line for line in lines if left <= line['position']['x'] < right]
+        ordered.extend(line['id'] for line in sorted(members, key=lambda item: (item['position']['y'], item['position']['x'])))
+    assigned = set(ordered)
+    ordered.extend(line['id'] for line in sorted(lines, key=lambda item: (item['position']['y'], item['position']['x'])) if line['id'] not in assigned)
+    return ordered
 
 
 def _table_row(line):
@@ -222,7 +256,7 @@ def analyse_layout(detections, page_width=None, page_height=None):
     inferred_width = max(_right(item['position']) for item in elements)
     inferred_height = max(_bottom(item['position']) for item in elements)
     page_width, page_height = int(page_width or inferred_width), int(page_height or inferred_height)
-    lines = group_into_lines(elements)
+    lines = group_into_lines(elements, page_width)
     tables = detect_tables(lines)
     table_line_ids = {line_id for table in tables for line_id in table['line_ids']}
     columns = _detect_columns([line for line in lines if line['id'] not in table_line_ids], page_width)
@@ -237,7 +271,7 @@ def analyse_layout(detections, page_width=None, page_height=None):
         'version': 1,
         'page': {'width': page_width, 'height': page_height},
         'elements': elements,
-        'reading_order': [line['id'] for line in lines],
+        'reading_order': reading_order(lines, columns),
         'lines': lines,
         'paragraphs': paragraphs,
         'tables': tables,

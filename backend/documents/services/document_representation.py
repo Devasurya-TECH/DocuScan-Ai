@@ -79,7 +79,10 @@ def build_document_representation(detections, page_width=None, page_height=None)
             'items': understanding['items'],
             'review_flags': understanding['review_flags'],
         })
-    blocks.sort(key=lambda block: block.get('source_position', {}).get('y', float('inf')))
+    # Preserve the layout analyser's reading order. Sorting only by y interleaves
+    # newspaper columns and makes an otherwise correct OCR transcript unreadable.
+    line_order = {line_id: index for index, line_id in enumerate(layout['reading_order'])}
+    blocks.sort(key=lambda block: min((line_order.get(line_id, float('inf')) for line_id in block.get('source_line_ids', [])), default=float('inf')))
     return validate_representation({
         'version': 1,
         'document_type': understanding['document_type'],

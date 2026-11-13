@@ -7,7 +7,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from .models import Document, DocumentExport
 from .services.image_enhancement import assess_quality, build_ocr_variants, correct_small_skew
-from .services.layout_analysis import analyse_layout
+from .services.layout_analysis import analyse_layout, reading_order
 from .services.document_understanding import understand_document
 from .services.document_representation import build_document_representation, validate_representation
 from .services.reconstruction_service import reconstruct_original_layout
@@ -17,6 +17,8 @@ from .services.ocr.model_registry import get_engine
 from .services.ocr.ocr_router import resolve_engine
 from .services.ocr.result_normalizer import normalize_detection
 from .services.ocr_evaluation import error_rate, evaluate_ocr
+from .services.script_detection import annotate_detection_languages
+from .services.capture_analysis import find_safe_document_boundary
 
 
 class OcrEvaluationTests(SimpleTestCase):
@@ -51,6 +53,12 @@ class OCRArchitectureTests(SimpleTestCase):
         with self.assertRaises(ValueError):
             get_engine('not-an-engine')
 
+    def test_detects_devanagari_script_from_returned_text(self):
+        detections = [{'text': 'नमस्ते भारत', 'language': 'en'}]
+        metadata = annotate_detection_languages(detections)
+        self.assertEqual(metadata['primary_script'], 'devanagari')
+        self.assertEqual(detections[0]['language'], 'hi')
+
 
 class ImageEnhancementTests(SimpleTestCase):
     def setUp(self):
@@ -75,6 +83,17 @@ class ImageEnhancementTests(SimpleTestCase):
         variants = build_ocr_variants(self.image, ('color', 'enhanced_color', 'deskewed_clahe'))
         self.assertEqual(set(variants), {'color', 'enhanced_color', 'deskewed_clahe'})
         self.assertGreaterEqual(max(variants['color'].shape[:2]), 1200)
+
+    def test_full_frame_boundary_is_not_used_for_perspective_warp(self):
+        image = np.full((200, 300, 3), 255, dtype=np.uint8)
+        # A border that touches the image edge resembles an already-cropped scan.
+        image[0:2, :] = 0
+        image[-2:, :] = 0
+        image[:, 0:2] = 0
+        image[:, -2:] = 0
+        corners, metadata = find_safe_document_boundary(image)
+        self.assertIsNone(corners)
+        self.assertIn(metadata['mode'], {'full_frame_document', 'full_frame_or_no_boundary'})
 
 
 class CandidateSelectionTests(SimpleTestCase):
@@ -130,6 +149,19 @@ class LayoutAnalysisTests(SimpleTestCase):
         self.assertEqual(len(layout['tables']), 1)
         self.assertEqual(layout['tables'][0]['rows'][0]['cells'][0]['text'], 'Lumber')
         self.assertEqual(layout['tables'][0]['rows'][1]['cells'][1]['text'], '$23.38')
+
+    def test_reads_two_columns_down_before_moving_right(self):
+        lines = [
+            {'id': 'left_1', 'position': {'x': 15, 'y': 10, 'width': 50, 'height': 16}},
+            {'id': 'right_1', 'position': {'x': 150, 'y': 12, 'width': 55, 'height': 16}},
+            {'id': 'left_2', 'position': {'x': 15, 'y': 40, 'width': 50, 'height': 16}},
+            {'id': 'right_2', 'position': {'x': 150, 'y': 42, 'width': 55, 'height': 16}},
+        ]
+        columns = [
+            {'position': {'x': 0, 'y': 0, 'width': 125, 'height': None}},
+            {'position': {'x': 125, 'y': 0, 'width': 125, 'height': None}},
+        ]
+        self.assertEqual(reading_order(lines, columns), ['left_1', 'left_2', 'right_1', 'right_2'])
 
 
 class DocumentUnderstandingTests(LayoutAnalysisTests):

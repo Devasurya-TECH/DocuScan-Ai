@@ -1,0 +1,8 @@
+# Install these in a dedicated Python 3.11-3.13 OCR worker, not the current
+# Python 3.14 desktop runtime. Keep the web/API process lightweight.
+paddlepaddle>=3.0,<4
+paddleocr>=3.0,<4
+
+# Handwriting line-recognition worker (not full-page OCR).
+transformers>=4.45,<6
+sentencepiece>=0.2

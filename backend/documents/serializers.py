@@ -21,11 +21,13 @@ DOCUMENT_DETAIL_FIELDS = (
     'document_data',
     'created_at',
     'updated_at',
+    'ocr_languages',
 )
 
 
 class DocumentSerializers(serializers.ModelSerializer):
     """Full document representation for an upload response and detail view."""
+    ocr_languages = serializers.CharField(write_only=True, required=False, allow_blank=True)
     class Meta:
         model = Document
         fields = DOCUMENT_DETAIL_FIELDS
@@ -66,6 +68,13 @@ class DocumentSerializers(serializers.ModelSerializer):
             )
         value.seek(0)
         return value
+
+    def validate_ocr_languages(self, value):
+        allowed = {'en', 'hi', 'ta', 'bn', 'te', 'kn', 'ml', 'gu', 'pa', 'mr', 'ur', 'ar'}
+        requested = [item.strip() for item in value.split(',') if item.strip()]
+        if any(item not in allowed for item in requested):
+            raise serializers.ValidationError('Unsupported OCR language selection.')
+        return ','.join(requested)
 
 
 class DocumentListSerializer(serializers.ModelSerializer):

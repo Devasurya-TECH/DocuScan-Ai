@@ -1,8 +1,9 @@
 import api from './api'
 
-export async function uploadDocument(file, onUploadProgress) {
+export async function uploadDocument(file, onUploadProgress, ocrLanguages = '') {
   const data = new FormData()
   data.append('uploaded_file', file)
+  if (ocrLanguages) data.append('ocr_languages', ocrLanguages)
   const response = await api.post('/documents/upload/', data, { onUploadProgress })
   return response.data
 }

@@ -78,6 +78,15 @@ def enhanced_color(image):
     return cv2.cvtColor(cv2.merge((lightness, channel_a, channel_b)), cv2.COLOR_LAB2BGR)
 
 
+def correct_uneven_illumination(image):
+    """Reduce shadows and mild glare while preserving character strokes."""
+    source = upscale_for_ocr(image)
+    gray = grayscale(source)
+    background = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((31, 31), np.uint8))
+    normalised = cv2.divide(gray, background, scale=255)
+    return cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8)).apply(normalised)
+
+
 def correct_small_skew(image, maximum_angle=15):
     """Correct small text-baseline skew without unexpectedly rotating a page."""
     source = grayscale(image)
@@ -99,14 +108,30 @@ def correct_small_skew(image, maximum_angle=15):
 def assess_quality(image):
     """Return explainable, non-ML quality metrics for UI and routing decisions."""
     gray = grayscale(image)
+    height, width = gray.shape[:2]
+    blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    contrast = float(np.std(gray))
     return {
         'width': int(gray.shape[1]),
         'height': int(gray.shape[0]),
-        'blur_variance': round(float(cv2.Laplacian(gray, cv2.CV_64F).var()), 2),
+        'blur_variance': round(blur, 2),
         'brightness_mean': round(float(np.mean(gray)), 2),
-        'contrast_stddev': round(float(np.std(gray)), 2),
+        'contrast_stddev': round(contrast, 2),
         'possible_glare_ratio': round(float(np.mean(gray >= 245)), 4),
+        'short_edge_pixels': int(min(width, height)),
+        'low_resolution_risk': min(width, height) < 900,
+        'blur_risk': blur < 60,
+        'low_contrast_risk': contrast < 32,
     }
+
+
+def recovery_strategies(quality):
+    strategies = ['enhanced_color', 'deskewed_clahe']
+    if quality.get('possible_glare_ratio', 0) > 0.08 or quality.get('low_contrast_risk'):
+        strategies.append('illumination_corrected')
+    if quality.get('blur_risk'):
+        strategies.append('sharpened')
+    return tuple(dict.fromkeys(strategies))
 
 
 def build_ocr_variants(image, names=None):
@@ -132,6 +157,7 @@ def build_ocr_variants(image, names=None):
         'morphological_open': lambda: morphological_open(source),
         'deskewed': get_deskewed,
         'enhanced_color': lambda: enhanced_color(source),
+        'illumination_corrected': lambda: correct_uneven_illumination(source),
         'deskewed_clahe': lambda: clahe(get_deskewed()),
         'deskewed_adaptive_threshold': lambda: adaptive_threshold(get_deskewed()),
     }
