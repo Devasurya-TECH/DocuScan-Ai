@@ -44,7 +44,7 @@ def _candidate_score(detections):
     return round(weighted_confidence + (coverage * 0.08) - (weak_fragments * 0.5), 6)
 
 
-def _resize_if_oversized(image, max_dim=2048):
+def _resize_if_oversized(image, max_dim=1280):
     h, w = image.shape[:2]
     if max(h, w) > max_dim:
         scale = max_dim / float(max(h, w))
@@ -55,7 +55,7 @@ def _resize_if_oversized(image, max_dim=2048):
 
 def select_ocr_candidate(image, languages=None):
     """Use one fast pass with docTR/primary engine, then recover only when its signal is weak."""
-    resized = _resize_if_oversized(image, max_dim=2048)
+    resized = _resize_if_oversized(image, max_dim=1280)
     candidates = []
 
     def add_candidates(strategy_names):
@@ -125,6 +125,7 @@ def process_document(document, languages=None):
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
     
     source_image = load_image(file_path)
+    source_image = _resize_if_oversized(source_image, max_dim=1280)
 
     corners, capture = find_safe_document_boundary(source_image)
     try:

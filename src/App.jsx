@@ -21,7 +21,7 @@ function AppContent({ theme, setTheme }) {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('docuscan-theme') || 'light')
+  const [theme, setTheme] = useState(() => localStorage.getItem('docuscan-theme') || 'dark')
 
   useEffect(() => {
     const isDark = theme === 'dark'
