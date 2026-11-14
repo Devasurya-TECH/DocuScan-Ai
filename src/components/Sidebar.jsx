@@ -1,13 +1,18 @@
-import { FileScan, UploadCloud, X } from 'lucide-react'
+import { FileScan, Files, UploadCloud, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useI18n } from '../i18n'
+import { useAuth } from '../context/AuthContext'
 
 export default function Sidebar({ open, close }) {
   const { t } = useI18n()
+  const { isAuthenticated } = useAuth()
+  
   const links = [
     { to: '/', label: 'Home', icon: FileScan, end: true },
     { to: '/scan', label: t('newScan'), icon: UploadCloud },
+    ...(isAuthenticated ? [{ to: '/documents', label: t('documents'), icon: Files }] : []),
   ]
+
   return (
     <aside
       className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-slate-200/80 bg-white px-4 py-5 shadow-2xl shadow-slate-900/5 transition-transform duration-300 dark:border-slate-800 dark:bg-[#09151f] lg:shadow-none ${
@@ -63,7 +68,7 @@ export default function Sidebar({ open, close }) {
       {/* Bottom tagline */}
       <div className="mt-auto px-2">
         <p className="text-[10px] text-slate-400 leading-relaxed">
-          No account needed. Upload a document, extract text, and download — that's it.
+          AI Document Intelligence &amp; Searchable Layout Reconstruction.
         </p>
       </div>
     </aside>

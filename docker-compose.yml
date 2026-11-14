@@ -1,18 +1,36 @@
 services:
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - certbot_volume:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - docuscan_net
+
   web:
     build:
       context: .
       dockerfile: Dockerfile
-    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 300"
-    ports:
-      - "8000:8000"
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 300"
     environment:
-      - DJANGO_DEBUG=False
-      - DJANGO_SECRET_KEY=production-secure-key-change-in-env
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-production-secure-key-change-in-env}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-docuscan}:${POSTGRES_PASSWORD:-docuscan_secure_pass}@postgres:5432/${POSTGRES_DB:-docuscan_db}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CELERY_ALWAYS_EAGER=False
-      - DATABASE_URL=postgres://docuscan:docuscan_secure_pass@postgres:5432/docuscan_db
+      - OCR_DEFAULT_ENGINE=${OCR_DEFAULT_ENGINE:-doctr}
+      - OCR_LANGUAGES=${OCR_LANGUAGES:-en,hi}
+      - OCR_DEVICE=${OCR_DEVICE:-cpu}
     depends_on:
       redis:
         condition: service_healthy
@@ -20,6 +38,9 @@ services:
         condition: service_healthy
     volumes:
       - media_volume:/app/backend/media
+    restart: unless-stopped
+    networks:
+      - docuscan_net
 
   celery_worker:
     build:
@@ -27,12 +48,16 @@ services:
       dockerfile: Dockerfile
     command: celery -A config worker -l INFO --concurrency=2
     environment:
-      - DJANGO_DEBUG=False
-      - DJANGO_SECRET_KEY=production-secure-key-change-in-env
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-production-secure-key-change-in-env}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-docuscan}:${POSTGRES_PASSWORD:-docuscan_secure_pass}@postgres:5432/${POSTGRES_DB:-docuscan_db}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CELERY_ALWAYS_EAGER=False
-      - DATABASE_URL=postgres://docuscan:docuscan_secure_pass@postgres:5432/docuscan_db
+      - OCR_DEFAULT_ENGINE=${OCR_DEFAULT_ENGINE:-doctr}
+      - OCR_LANGUAGES=${OCR_LANGUAGES:-en,hi}
+      - OCR_DEVICE=${OCR_DEVICE:-cpu}
     depends_on:
       redis:
         condition: service_healthy
@@ -40,31 +65,54 @@ services:
         condition: service_healthy
     volumes:
       - media_volume:/app/backend/media
+    restart: unless-stopped
+    networks:
+      - docuscan_net
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - docuscan_net
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      - POSTGRES_DB=docuscan_db
-      - POSTGRES_USER=docuscan
-      - POSTGRES_PASSWORD=docuscan_secure_pass
+      - POSTGRES_DB=${POSTGRES_DB:-docuscan_db}
+      - POSTGRES_USER=${POSTGRES_USER:-docuscan}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-docuscan_secure_pass}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docuscan -d docuscan_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docuscan} -d ${POSTGRES_DB:-docuscan_db}"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - docuscan_net
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_volume:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - docuscan_net
 
 volumes:
   media_volume:
   pgdata:
+  certbot_volume:
+  certbot_www:
+
+networks:
+  docuscan_net:
+    driver: bridge

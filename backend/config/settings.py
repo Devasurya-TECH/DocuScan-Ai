@@ -149,3 +149,15 @@ MEDIA_ROOT = BASE_DIR / 'media'
 os.makedirs(MEDIA_ROOT / 'documents', exist_ok=True)
 os.makedirs(MEDIA_ROOT / 'processed_documents', exist_ok=True)
 os.makedirs(MEDIA_ROOT / 'exports', exist_ok=True)
+
+# Production security and upload constraints
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
