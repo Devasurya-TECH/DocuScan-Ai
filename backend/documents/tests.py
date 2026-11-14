@@ -665,6 +665,131 @@ class ProductionPersistenceAndStatusTests(TestCase):
         self.assertEqual(settings.CELERY_TASK_ALWAYS_EAGER, settings.CELERY_ALWAYS_EAGER)
 
 
+class TesseractEngineTests(TestCase):
+    def test_tesseract_engine_is_registered(self):
+        from .services.ocr.model_registry import get_engine, ENGINE_TYPES
+        from .services.ocr.tesseract_engine import TesseractEngine
+
+        self.assertIn('tesseract', ENGINE_TYPES)
+        engine = get_engine('tesseract')
+        self.assertIsInstance(engine, TesseractEngine)
+        self.assertEqual(engine.name, 'tesseract')
+        self.assertEqual(engine.model_name, 'tesseract-ocr-v5')
+
+    def test_tesseract_languages_mapping(self):
+        from .services.ocr.tesseract_engine import TesseractEngine
+
+        engine = TesseractEngine(languages=['en', 'hi'])
+        self.assertEqual(engine._get_tesseract_languages(), 'eng+hin')
+
+        engine_single = TesseractEngine(languages=['ta'])
+        self.assertEqual(engine_single._get_tesseract_languages(), 'tam')
+
+    def test_tesseract_extract_produces_normalized_detections(self):
+        from .services.ocr.tesseract_engine import TesseractEngine
+
+        engine = TesseractEngine()
+        dummy_img = np.zeros((200, 400, 3), dtype=np.uint8)
+
+        mock_tesseract_data = {
+            'text': ['', 'INVOICE', '#12345', '', 'TOTAL', '$99.00'],
+            'conf': [-1, 95.0, 88.5, -1, 92.0, 96.0],
+            'left': [0, 20, 120, 0, 20, 150],
+            'top': [0, 30, 30, 0, 100, 100],
+            'width': [0, 80, 70, 0, 60, 80],
+            'height': [0, 25, 25, 0, 20, 20],
+            'block_num': [1, 1, 1, 2, 2, 2],
+            'line_num': [0, 1, 1, 0, 1, 1],
+            'word_num': [0, 1, 2, 0, 1, 2],
+        }
+
+        with patch.object(engine, 'is_available', return_value=True):
+            with patch('pytesseract.image_to_data', return_value=mock_tesseract_data):
+                detections = engine.extract(dummy_img)
+
+        self.assertEqual(len(detections), 4)
+        first = detections[0]
+        self.assertEqual(first['text'], 'INVOICE')
+        self.assertEqual(first['engine'], 'tesseract')
+        self.assertEqual(first['model_name'], 'tesseract-ocr-v5')
+        self.assertAlmostEqual(first['confidence'], 0.95, places=2)
+        self.assertEqual(first['bounding_box'], [[20, 30], [100, 30], [100, 55], [20, 55]])
+
+        last = detections[-1]
+        self.assertEqual(last['text'], '$99.00')
+        self.assertAlmostEqual(last['confidence'], 0.96, places=2)
+        self.assertEqual(last['bounding_box'], [[150, 100], [230, 100], [230, 120], [150, 120]])
+
+    def test_sandwich_pdf_export_with_tesseract_detections(self):
+        from .services.export_service import create_export
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        import io
+        from PIL import Image
+
+        img_io = io.BytesIO()
+        Image.new('RGB', (400, 200), color='white').save(img_io, format='PNG')
+        scan_file = SimpleUploadedFile('tesseract_test.png', img_io.getvalue(), content_type='image/png')
+
+        doc = Document.objects.create(
+            uploaded_file=scan_file,
+            processed_file=scan_file,
+            status='completed',
+            extracted_text='INVOICE #12345\nTOTAL $99.00',
+            ocr_results=[
+                {
+                    'engine': 'tesseract',
+                    'model_name': 'tesseract-ocr-v5',
+                    'text': 'INVOICE',
+                    'confidence': 0.95,
+                    'bounding_box': [[20, 30], [100, 30], [100, 55], [20, 55]],
+                    'language': 'en',
+                    'region_type': 'printed_text',
+                },
+                {
+                    'engine': 'tesseract',
+                    'model_name': 'tesseract-ocr-v5',
+                    'text': '#12345',
+                    'confidence': 0.88,
+                    'bounding_box': [[120, 30], [190, 30], [190, 55], [120, 55]],
+                    'language': 'en',
+                    'region_type': 'printed_text',
+                },
+                {
+                    'engine': 'tesseract',
+                    'model_name': 'tesseract-ocr-v5',
+                    'text': 'TOTAL',
+                    'confidence': 0.92,
+                    'bounding_box': [[20, 100], [80, 100], [80, 120], [20, 120]],
+                    'language': 'en',
+                    'region_type': 'printed_text',
+                },
+                {
+                    'engine': 'tesseract',
+                    'model_name': 'tesseract-ocr-v5',
+                    'text': '$99.00',
+                    'confidence': 0.96,
+                    'bounding_box': [[150, 100], [230, 100], [230, 120], [150, 120]],
+                    'language': 'en',
+                    'region_type': 'printed_text',
+                },
+            ],
+        )
+
+        pdf_export = create_export(doc, export_format='pdf')
+        self.assertEqual(pdf_export.export_format, 'pdf')
+        self.assertTrue(pdf_export.file)
+        self.assertTrue(pdf_export.file.size > 0)
+
+        docx_export = create_export(doc, export_format='docx')
+        self.assertEqual(docx_export.export_format, 'docx')
+        self.assertTrue(docx_export.file.size > 0)
+
+        txt_export = create_export(doc, export_format='txt')
+        self.assertEqual(txt_export.export_format, 'txt')
+        self.assertIn(b'INVOICE', txt_export.file.read())
+
+
+
 
 
 

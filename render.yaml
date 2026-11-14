@@ -21,7 +21,7 @@ services:
       - key: CELERY_RESULT_BACKEND
         value: "cache+memory://"
       - key: OCR_DEFAULT_ENGINE
-        value: "doctr"
+        value: "tesseract"
       - key: OCR_LANGUAGES
         value: "en,hi"
       - key: OCR_DEVICE
