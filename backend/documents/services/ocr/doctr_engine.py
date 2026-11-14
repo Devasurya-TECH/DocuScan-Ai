@@ -26,6 +26,8 @@ class DocTREngine(OCREngine):
             raise OCRUnavailable('python-doctr is not installed in this environment.')
         if DocTREngine._predictor is None:
             try:
+                import torch
+                torch.set_num_threads(2)
                 from doctr.models import ocr_predictor
                 logger.info('Initializing docTR OCR predictor (loaded once per worker)...')
                 DocTREngine._predictor = ocr_predictor(
