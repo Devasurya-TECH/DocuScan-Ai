@@ -36,7 +36,9 @@ def _execute_processing(document_id, job_id=None, languages=None):
         document.progress_stage = 'failed'
         document.failure_reason = str(exc)[:1000]
         document.save(update_fields=['status', 'progress_stage', 'failure_reason', 'updated_at'])
-        raise exc
+        if not getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+            raise exc
+        return {'status': 'failed', 'document_id': document.id, 'error': str(exc)}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)

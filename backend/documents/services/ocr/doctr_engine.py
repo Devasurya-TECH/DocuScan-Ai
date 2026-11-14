@@ -81,6 +81,7 @@ class DocTREngine(OCREngine):
         from doctr.io import DocumentFile
         import cv2
 
+        orig_h, orig_w = 1000, 1000
         if isinstance(image, str):
             doc = DocumentFile.from_images(image)
         elif isinstance(image, np.ndarray):
@@ -93,6 +94,15 @@ class DocTREngine(OCREngine):
                 rgb_image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
             else:
                 rgb_image = image
+
+            orig_h, orig_w = rgb_image.shape[:2]
+            # Downscale oversized images (e.g. 12MP phone photos) to prevent crossing Render's 512MB RAM ceiling
+            MAX_DIM = 1280
+            if max(orig_h, orig_w) > MAX_DIM:
+                scale = MAX_DIM / float(max(orig_h, orig_w))
+                new_w, new_h = int(orig_w * scale), int(orig_h * scale)
+                rgb_image = cv2.resize(rgb_image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
             doc = [rgb_image]
         else:
             raise ValueError(f'Unsupported image input type for docTR: {type(image)}')
@@ -103,13 +113,17 @@ class DocTREngine(OCREngine):
             result = DocTREngine._predictor(doc)
         export = result.export()
 
+        import gc
+        del doc
+        gc.collect()
+
         detections = []
         if not export.get('pages'):
             return detections
 
         page = export['pages'][0]
-        page_dim = page.get('dimensions', (1000, 1000))
-        h, w = page_dim[0], page_dim[1]
+        # Map normalized coordinates back to the original image dimensions
+        h, w = orig_h, orig_w
 
         for block in page.get('blocks', []):
             for line in block.get('lines', []):

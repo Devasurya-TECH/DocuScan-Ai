@@ -310,13 +310,16 @@ def document_file_download_view(request, pk, file_type):
     """
     document = _get_user_document(pk, request)
 
-    if file_type == 'uploaded' and document.uploaded_file:
-        file_handle = document.uploaded_file.open('rb')
-        content_type = 'application/pdf' if document.uploaded_file.name.lower().endswith('.pdf') else 'image/png'
-        return FileResponse(file_handle, content_type=content_type)
-    elif file_type == 'processed' and document.processed_file:
-        file_handle = document.processed_file.open('rb')
-        return FileResponse(file_handle, content_type='image/png')
+    try:
+        if file_type == 'uploaded' and document.uploaded_file:
+            file_handle = document.uploaded_file.open('rb')
+            content_type = 'application/pdf' if document.uploaded_file.name.lower().endswith('.pdf') else 'image/png'
+            return FileResponse(file_handle, content_type=content_type)
+        elif file_type == 'processed' and document.processed_file:
+            file_handle = document.processed_file.open('rb')
+            return FileResponse(file_handle, content_type='image/png')
+    except (FileNotFoundError, ValueError, OSError):
+        raise Http404("Source file is not available on storage.")
 
     raise Http404("Requested file does not exist.")
 

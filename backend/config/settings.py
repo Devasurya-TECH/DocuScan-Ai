@@ -74,7 +74,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
-# Supports SQLite locally and PostgreSQL via DATABASE_URL in production
+# Supports SQLite locally, and PostgreSQL (e.g. Neon Serverless Postgres) via DATABASE_URL in production
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -82,17 +82,32 @@ DATABASES = {
     }
 }
 
-if os.environ.get('DATABASE_URL'):
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
     import urllib.parse
-    db_url = urllib.parse.urlparse(os.environ['DATABASE_URL'])
+    # Normalize postgres:// to postgresql:// for psycopg
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    db_url = urllib.parse.urlparse(database_url)
+    query_params = urllib.parse.parse_qs(db_url.query)
+
+    db_options = {}
+    if 'sslmode' in query_params:
+        db_options['sslmode'] = query_params['sslmode'][0]
+    elif not DEBUG or 'neon.tech' in (db_url.hostname or ''):
+        db_options['sslmode'] = 'require'
+
     DATABASES['default'] = {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': db_url.path.lstrip('/'),
-        'USER': db_url.username,
-        'PASSWORD': db_url.password,
+        'NAME': urllib.parse.unquote(db_url.path.lstrip('/')),
+        'USER': urllib.parse.unquote(db_url.username or ''),
+        'PASSWORD': urllib.parse.unquote(db_url.password or ''),
         'HOST': db_url.hostname,
-        'PORT': db_url.port or '5432',
+        'PORT': db_url.port or 5432,
+        'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '600')),
     }
+    if db_options:
+        DATABASES['default']['OPTIONS'] = db_options
 
 # Django REST Framework
 REST_FRAMEWORK = {
@@ -125,7 +140,9 @@ SIMPLE_JWT = {
 # Celery Configuration
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/0')
-CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_ALWAYS_EAGER', 'true').lower() == 'true'
+# Read both CELERY_TASK_ALWAYS_EAGER and legacy CELERY_ALWAYS_EAGER
+CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', os.environ.get('CELERY_ALWAYS_EAGER', 'true')).lower() == 'true'
+CELERY_ALWAYS_EAGER = CELERY_TASK_ALWAYS_EAGER
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
@@ -159,7 +176,46 @@ STATICFILES_DIRS = [FRONTEND_DIST_DIR / 'assets'] if (FRONTEND_DIST_DIR / 'asset
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Ensure directories exist
+# Persistent Object Storage (Cloudflare R2 / AWS S3)
+# When configured, uploaded documents and generated files persist across Render restarts for $0
+USE_S3_STORAGE = (
+    os.environ.get('USE_S3_STORAGE', 'false').lower() == 'true'
+    or bool(os.environ.get('AWS_ACCESS_KEY_ID'))
+    or bool(os.environ.get('R2_ACCESS_KEY_ID'))
+)
+
+if USE_S3_STORAGE:
+    if 'storages' not in INSTALLED_APPS:
+        INSTALLED_APPS.append('storages')
+    AWS_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID', os.environ.get('AWS_ACCESS_KEY_ID'))
+    AWS_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY', os.environ.get('AWS_SECRET_ACCESS_KEY'))
+    AWS_STORAGE_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME', os.environ.get('AWS_STORAGE_BUCKET_NAME', 'docuscan-media'))
+    AWS_S3_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL', os.environ.get('AWS_S3_ENDPOINT_URL'))
+    AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'auto')
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_DEFAULT_ACL = None
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_QUERYSTRING_AUTH = True
+    AWS_QUERYSTRING_EXPIRE = 3600
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
+else:
+    STORAGES = {
+        'default': {
+            'BACKEND': 'django.core.files.storage.FileSystemStorage',
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
+
+# Ensure local directories exist (fallback when not using S3)
 os.makedirs(MEDIA_ROOT / 'documents', exist_ok=True)
 os.makedirs(MEDIA_ROOT / 'processed_documents', exist_ok=True)
 os.makedirs(MEDIA_ROOT / 'exports', exist_ok=True)

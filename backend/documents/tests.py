@@ -595,5 +595,76 @@ class LazyOCRInitializationTests(TestCase):
             self.assertFalse(DocTREngine.is_model_loaded())
 
 
+class ProductionPersistenceAndStatusTests(TestCase):
+    def test_upload_persists_record_and_status_polls(self):
+        import io
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        img_io = io.BytesIO()
+        Image.new('RGB', (100, 100), color='white').save(img_io, format='PNG')
+        img_file = SimpleUploadedFile('test_scan.png', img_io.getvalue(), content_type='image/png')
+
+        with patch('documents.tasks.process_document_task.delay') as mock_task:
+            response = self.client.post('/api/documents/upload/', {'uploaded_file': img_file})
+            self.assertEqual(response.status_code, 201)
+            doc_id = response.json()['id']
+            mock_task.assert_called_once()
+
+            # Verify persisted in database
+            self.assertTrue(Document.objects.filter(id=doc_id).exists())
+
+            # Poll status endpoint
+            status_res = self.client.get(f'/api/documents/{doc_id}/status/')
+            self.assertEqual(status_res.status_code, 200)
+            status_data = status_res.json()
+            self.assertEqual(status_data['id'], doc_id)
+            self.assertEqual(status_data['status'], 'processing')
+            self.assertIn('progress_stage', status_data)
+
+    def test_status_endpoint_returns_404_for_missing_record(self):
+        # Simulates post-restart SQLite loss where Document 1 was wiped
+        response = self.client.get('/api/documents/99999/status/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_processing_failure_records_reason_in_status(self):
+        from .tasks import _execute_processing
+
+        doc = Document.objects.create(
+            uploaded_file='documents/nonexistent_file_test.png',
+            status='queued',
+        )
+        # Attempt processing on missing file
+        result = _execute_processing(doc.id)
+        self.assertEqual(result.get('status'), 'failed')
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'failed')
+        self.assertEqual(doc.progress_stage, 'failed')
+        self.assertTrue(len(doc.failure_reason) > 0)
+
+        # Status endpoint returns the failure reason
+        response = self.client.get(f'/api/documents/{doc.id}/status/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'failed')
+        self.assertEqual(data['failure_reason'], doc.failure_reason)
+
+    def test_file_download_returns_404_when_storage_file_missing(self):
+        doc = Document.objects.create(
+            uploaded_file='documents/wiped_on_restart.png',
+            status='completed',
+        )
+        response = self.client.get(f'/api/documents/{doc.id}/file/uploaded/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_celery_eager_settings_defined(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'CELERY_TASK_ALWAYS_EAGER'))
+        self.assertTrue(hasattr(settings, 'CELERY_ALWAYS_EAGER'))
+        self.assertEqual(settings.CELERY_TASK_ALWAYS_EAGER, settings.CELERY_ALWAYS_EAGER)
+
+
+
 
 

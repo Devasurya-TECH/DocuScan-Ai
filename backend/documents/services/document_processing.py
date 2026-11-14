@@ -1,6 +1,9 @@
+import os
+import tempfile
 from pathlib import Path
 
 import cv2
+import numpy as np
 from django.core.files.base import ContentFile
 
 from .image_processing import correct_perspective, load_image
@@ -88,43 +91,116 @@ def select_ocr_candidate(image, languages=None):
 from .pdf_ingestion import is_pdf, extract_pdf_data
 
 
+def safe_open_image(field_file):
+    """
+    Safely load an image from a Django FieldFile whether stored locally, in S3,
+    or in memory, returning a numpy BGR image array.
+    """
+    try:
+        if hasattr(field_file, 'path') and os.path.exists(field_file.path):
+            img = cv2.imread(field_file.path)
+            if img is not None:
+                return img
+    except (NotImplementedError, AttributeError, ValueError):
+        pass
+
+    try:
+        field_file.open('rb')
+        content = field_file.read()
+        if not content:
+            raise FileNotFoundError("Uploaded file content is empty or missing from storage.")
+        arr = np.frombuffer(content, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Could not decode image from uploaded file bytes.")
+        return img
+    except Exception as exc:
+        raise FileNotFoundError(f"Source file could not be read from storage: {exc}") from exc
+    finally:
+        try:
+            field_file.close()
+        except Exception:
+            pass
+
+
+def safe_get_pdf_path(field_file):
+    """
+    Ensure PDF file is accessible via local path for pypdf / pypdfium2.
+    Returns (path_str, is_temporary_bool).
+    """
+    try:
+        if hasattr(field_file, 'path') and os.path.exists(field_file.path):
+            return field_file.path, False
+    except (NotImplementedError, AttributeError, ValueError):
+        pass
+
+    try:
+        field_file.open('rb')
+        content = field_file.read()
+        if not content:
+            raise FileNotFoundError("PDF file content is empty or missing from storage.")
+        tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        tmp.write(content)
+        tmp.flush()
+        tmp.close()
+        return tmp.name, True
+    finally:
+        try:
+            field_file.close()
+        except Exception:
+            pass
+
+
 def process_document(document, languages=None):
     """Create the enhanced scan and OCR data for a saved document record.
 
     Boundary detection is best-effort: a valid image that has no detectable page
     is still enhanced and sent to OCR instead of being discarded.
     """
-    file_path = document.uploaded_file.path
-    
+    if not document.uploaded_file:
+        raise ValueError("Document has no uploaded file associated.")
+
+    # Determine if the file is a PDF
+    file_name = document.uploaded_file.name.lower() if document.uploaded_file.name else ''
+    is_pdf_file = file_name.endswith('.pdf')
+
     # Handle multi-page PDF documents
-    if is_pdf(file_path):
+    if is_pdf_file:
         document.progress_stage = 'pdf_extraction'
         document.progress_percent = 20
         document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
-        
-        total_pages, pages = extract_pdf_data(file_path)
-        document.is_multipage = total_pages > 1
-        document.page_count = total_pages
-        document.pages_data = pages
-        
-        # If PDF has extractable text, combine
-        combined_pdf_text = '\n\n'.join(p['text'] for p in pages if p.get('text'))
-        if combined_pdf_text.strip():
-            document.extracted_text = combined_pdf_text
-            document.ocr_engine = 'pypdf:digital_pdf'
-            document.status = 'completed'
-            document.progress_stage = 'completed'
-            document.progress_percent = 100
-            document.document_type = 'general_printed_document'
-            document.save()
-            return document
+
+        pdf_path, is_temp = safe_get_pdf_path(document.uploaded_file)
+        try:
+            total_pages, pages = extract_pdf_data(pdf_path)
+            document.is_multipage = total_pages > 1
+            document.page_count = total_pages
+            document.pages_data = pages
+
+            # If PDF has extractable text, combine
+            combined_pdf_text = '\n\n'.join(p['text'] for p in pages if p.get('text'))
+            if combined_pdf_text.strip():
+                document.extracted_text = combined_pdf_text
+                document.ocr_engine = 'pypdf:digital_pdf'
+                document.status = 'completed'
+                document.progress_stage = 'completed'
+                document.progress_percent = 100
+                document.document_type = 'general_printed_document'
+                document.save()
+                return document
+        finally:
+            if is_temp and os.path.exists(pdf_path):
+                try:
+                    os.unlink(pdf_path)
+                except OSError:
+                    pass
 
     # Standard image / photographed document pipeline
     document.progress_stage = 'boundary_detection'
     document.progress_percent = 25
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
-    
-    source_image = load_image(file_path)
+
+    source_image = safe_open_image(document.uploaded_file)
     source_image = _resize_if_oversized(source_image, max_dim=1280)
 
     corners, capture = find_safe_document_boundary(source_image)
