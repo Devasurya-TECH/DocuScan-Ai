@@ -38,6 +38,7 @@ api.interceptors.response.use(
           localStorage.removeItem('docuscan_access')
           localStorage.removeItem('docuscan_refresh')
           localStorage.removeItem('docuscan_user')
+          window.dispatchEvent(new Event('docuscan_session_expired'))
         }
       }
     }

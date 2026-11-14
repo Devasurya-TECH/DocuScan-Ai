@@ -150,9 +150,50 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TIME_LIMIT = 300
 
-# CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+# CORS settings — restricted for production security
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = False
+
+# Default development origins — production URL also listed as a fallback
+# (the env var CORS_ALLOWED_ORIGINS on Render is the authoritative production value)
+CORS_ALLOWED_ORIGINS = [
+    'https://docu-scan-ai-sigma.vercel.app',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
+
+# Allow any custom origins specified in the environment (e.g. production Vercel frontend URL)
+custom_cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if custom_cors_origins:
+    for origin in custom_cors_origins.split(','):
+        origin = origin.strip()
+        if origin and origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(origin)
+
+# Allow Vercel production and preview deployment URLs for this project only.
+# Rejects all other *.vercel.app domains.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://docu-scan-ai-sigma(-[a-zA-Z0-9_-]+)?\.vercel\.app$",
+]
+
+# CSRF trusted origins for web forms / admin / cross-origin requests
+CSRF_TRUSTED_ORIGINS = [
+    'https://docu-scan-ai-sigma.vercel.app',
+    'https://*.onrender.com',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+if custom_cors_origins:
+    for origin in custom_cors_origins.split(','):
+        origin = origin.strip()
+        if origin and origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

@@ -32,6 +32,8 @@ urlpatterns = [
     path('auth/token/refresh', TokenRefreshView.as_view()),
     path('auth/me/', UserProfileView.as_view(), name='auth-me'),
     path('auth/me', UserProfileView.as_view()),
+    path('auth/profile/', UserProfileView.as_view(), name='auth-profile'),
+    path('auth/profile', UserProfileView.as_view()),
 
     # Document Processing & Management
     path('documents/upload/', DocumentUploadView.as_view(), name='document-upload'),

@@ -118,7 +118,23 @@ export default function NewScan() {
 
   const pollStatus = (docId) => {
     let consecutiveErrors = 0
+    const POLL_INTERVAL_MS = 1500
+    const MAX_POLL_MS = 120_000 // 2 minutes
+    const startedAt = Date.now()
+
     const interval = setInterval(async () => {
+      // Hard timeout — stop polling even if status is still 'processing'
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        clearInterval(interval)
+        setState('failed')
+        setError(
+          'Processing is taking longer than expected. ' +
+          'The document may still be processing in the background. ' +
+          'Open the workspace below to check its status or reprocess it.'
+        )
+        return
+      }
+
       try {
         const res = await pollDocumentStatus(docId)
         consecutiveErrors = 0
@@ -141,7 +157,7 @@ export default function NewScan() {
           setState('failed')
         }
       }
-    }, 1500)
+    }, POLL_INTERVAL_MS)
   }
 
   const stageDescriptions = {
@@ -149,7 +165,7 @@ export default function NewScan() {
     starting: 'Starting OCR neural engine…',
     pdf_extraction: 'Extracting PDF pages…',
     boundary_detection: 'Detecting document boundary & perspective…',
-    ocr_inference: 'Running docTR deep learning OCR…',
+    ocr_inference: 'Running optical character recognition…',
     document_understanding: 'Structuring and organizing text…',
     completed: 'Extraction complete! Opening editor…',
     reprocessing: 'Reprocessing document…',
@@ -173,9 +189,22 @@ export default function NewScan() {
       {/* Main Upload Card */}
       <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 dark:border-slate-800 dark:bg-[#0c1824]">
         {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl bg-rose-50 p-4 text-xs font-semibold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
-            <AlertCircle size={16} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
+          <div className="mb-6 rounded-2xl bg-rose-50 p-4 dark:bg-rose-950/30">
+            <div className="flex items-start gap-3 text-xs font-semibold text-rose-700 dark:text-rose-300">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+            {createdDocId && state === 'failed' && (
+              <div className="mt-3 pl-6">
+                <Link
+                  to={`/documents/${createdDocId}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-600 underline-offset-2 hover:underline dark:text-teal-400"
+                >
+                  <Eye size={13} />
+                  Open document workspace to check status or reprocess
+                </Link>
+              </div>
+            )}
           </div>
         )}
 

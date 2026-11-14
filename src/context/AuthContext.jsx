@@ -8,6 +8,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const handleExpired = () => setUser(null)
+    window.addEventListener('docuscan_session_expired', handleExpired)
+    return () => window.removeEventListener('docuscan_session_expired', handleExpired)
+  }, [])
+
+  useEffect(() => {
     if (authService.isAuthenticated()) {
       authService.getProfile()
         .then((profile) => {

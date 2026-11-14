@@ -2,6 +2,8 @@ import logging
 import uuid
 from pathlib import Path
 
+from django.utils import timezone
+
 from django.contrib.auth.models import User
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -185,8 +187,28 @@ class DocumentStatusView(APIView):
     """Live processing job telemetry endpoint for frontend polling."""
     permission_classes = [AllowAny]
 
+    # Jobs stuck in 'processing' longer than this have been interrupted (server
+    # restart, OOM kill, etc.) and will never complete on their own.
+    _STALE_PROCESSING_SECONDS = 180  # 3 minutes
+
     def get(self, request, pk):
         document = _get_user_document(pk, request)
+
+        # Lazy stale detection: runs only when a client actually polls the
+        # document. Avoids a costly startup DB-wide sweep.
+        if document.status == 'processing':
+            age = (timezone.now() - document.updated_at).total_seconds()
+            if age > self._STALE_PROCESSING_SECONDS:
+                document.status = 'failed'
+                document.progress_stage = 'failed'
+                document.failure_reason = (
+                    'Processing was interrupted (likely a server restart or '
+                    'memory limit). Click Reprocess to try again.'
+                )
+                document.save(update_fields=[
+                    'status', 'progress_stage', 'failure_reason', 'updated_at'
+                ])
+
         return Response(DocumentStatusSerializer(document).data)
 
 
