@@ -12,7 +12,21 @@ FRONTEND_DIST_DIR = BASE_DIR.parent / 'dist'
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'unsafe-development-key-change-me')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
-ALLOWED_HOSTS = [host for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if host]
+
+allowed_hosts_raw = os.environ.get('DJANGO_ALLOWED_HOSTS', '*')
+if allowed_hosts_raw.strip() == '*':
+    ALLOWED_HOSTS = ['*']
+else:
+    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
+
+# Render internal health checks probe localhost/127.0.0.1. Ensure local probes never fail with 400 DisallowedHost.
+for default_host in ['localhost', '127.0.0.1', '0.0.0.0', 'testserver', '.onrender.com']:
+    if default_host not in ALLOWED_HOSTS and '*' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(default_host)
+
+render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if render_host and render_host not in ALLOWED_HOSTS and '*' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_host)
 
 # Application definition
 INSTALLED_APPS = [

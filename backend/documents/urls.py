@@ -19,27 +19,37 @@ from .views import (
 )
 
 urlpatterns = [
-    # System health
+    # System health (both /api/health/ and /api/health)
     path('health/', HealthCheckView.as_view(), name='health-check'),
+    path('health', HealthCheckView.as_view()),
 
     # Authentication & Profile
     path('auth/register/', UserRegisterView.as_view(), name='auth-register'),
+    path('auth/register', UserRegisterView.as_view()),
     path('auth/token/', TokenObtainPairView.as_view(), name='auth-token-obtain'),
+    path('auth/token', TokenObtainPairView.as_view()),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='auth-token-refresh'),
+    path('auth/token/refresh', TokenRefreshView.as_view()),
     path('auth/me/', UserProfileView.as_view(), name='auth-me'),
+    path('auth/me', UserProfileView.as_view()),
 
     # Document Processing & Management
     path('documents/upload/', DocumentUploadView.as_view(), name='document-upload'),
+    path('documents/upload', DocumentUploadView.as_view()),
     path('documents/', DocumentListView.as_view(), name='document-list'),
+    path('documents', DocumentListView.as_view()),
     path('documents/<int:pk>/', DocumentDetailView.as_view(), name='document-detail'),
     path('documents/<int:pk>/status/', DocumentStatusView.as_view(), name='document-status'),
+    path('documents/<int:pk>/status', DocumentStatusView.as_view()),
     path('documents/<int:pk>/export/', document_export_view, name='document-export'),
+    path('documents/<int:pk>/export', document_export_view),
     path('documents/<int:pk>/corrections/', document_correction_view, name='document-correction'),
     path('documents/<int:pk>/reprocess/', document_reprocess_view, name='document-reprocess'),
     path('documents/<int:pk>/autocorrect/', document_autocorrect_view, name='document-autocorrect'),
 
     # Advanced AI: RAG Question Answering & Secure File Access
     path('documents/<int:pk>/ask/', document_qa_view, name='document-qa'),
+    path('documents/<int:pk>/ask', document_qa_view),
     path('documents/<int:pk>/file/<str:file_type>/', document_file_download_view, name='document-file-download'),
 
     # Evaluation Dashboard

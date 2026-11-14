@@ -4,8 +4,28 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from django.views.static import serve
+from django.http import JsonResponse
+
+
+def health_check(request):
+    """
+    Lightweight, zero-dependency health check endpoint for Render, Docker,
+    and external load balancers.
+    Responds in <1ms without touching the database or loading ML/OCR models.
+    """
+    return JsonResponse({
+        'status': 'healthy',
+        'service': 'docuscan-api',
+        'version': '2.0.0',
+    }, status=200)
+
 
 urlpatterns = [
+    # Top-level health endpoints (handles Render probes to /health/, /health, or /healthz)
+    path('health/', health_check, name='root-health-check-slash'),
+    path('health', health_check, name='root-health-check'),
+    path('healthz', health_check, name='root-healthz'),
+
     path('admin/', admin.site.urls),
     path('api/', include('documents.urls')),
     re_path(r'^assets/(?P<path>.*)$', serve, {'document_root': settings.FRONTEND_DIST_DIR / 'assets'}),
@@ -16,7 +36,7 @@ urlpatterns = [
 ]
 
 # React Router routes are served by the same built application in local Django
-# development. API, admin, media, and asset paths are matched above first.
+# development. API, admin, media, assets, and health paths are matched above first.
 urlpatterns += [
-    re_path(r'^(?!api/|admin/|media/|assets/).*$', TemplateView.as_view(template_name='index.html')),
+    re_path(r'^(?!api/|admin/|media/|assets/|health).*$', TemplateView.as_view(template_name='index.html')),
 ]

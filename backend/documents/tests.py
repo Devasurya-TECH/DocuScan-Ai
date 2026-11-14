@@ -512,4 +512,88 @@ class DocTREngineAndReprocessTests(TestCase):
         self.assertGreaterEqual(data['changes_count'], 2)
 
 
+class HealthAndDeploymentTests(TestCase):
+    def test_root_health_endpoint_returns_200(self):
+        response = self.client.get('/health/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data.get('status'), 'healthy')
+        self.assertEqual(data.get('service'), 'docuscan-api')
+
+    def test_root_health_without_trailing_slash_returns_200(self):
+        response = self.client.get('/health')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get('status'), 'healthy')
+
+    def test_api_health_endpoint_returns_200(self):
+        response = self.client.get('/api/health/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get('status'), 'healthy')
+
+    def test_api_health_without_trailing_slash_returns_200(self):
+        response = self.client.get('/api/health')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get('status'), 'healthy')
+
+    def test_health_check_does_not_load_ocr_model(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        DocTREngine.reset_model()
+        self.assertFalse(DocTREngine.is_model_loaded())
+
+        # Call health check
+        response = self.client.get('/health/')
+        self.assertEqual(response.status_code, 200)
+
+        # Confirm model remains unloaded
+        self.assertFalse(DocTREngine.is_model_loaded())
+
+
+class LazyOCRInitializationTests(TestCase):
+    def setUp(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        DocTREngine.reset_model()
+
+    def tearDown(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        DocTREngine.reset_model()
+
+    def test_is_available_does_not_load_model(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        engine = DocTREngine()
+        self.assertFalse(DocTREngine.is_model_loaded())
+        self.assertTrue(engine.is_available())
+        self.assertFalse(DocTREngine.is_model_loaded())
+
+    def test_lazy_initialization_and_thread_safety(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        import threading
+
+        engine = DocTREngine()
+        self.assertFalse(DocTREngine.is_model_loaded())
+        self.assertIsInstance(DocTREngine._lock, type(threading.Lock()))
+
+        # Mock ocr_predictor to test thread-safe lazy caching without downloading 100MB weights in unit test
+        with patch('doctr.models.ocr_predictor', return_value='mock_predictor') as mock_pred:
+            predictor1 = engine._load_model()
+            self.assertEqual(predictor1, 'mock_predictor')
+            self.assertTrue(DocTREngine.is_model_loaded())
+            mock_pred.assert_called_once()
+
+            # Second call should use cached predictor without re-invoking constructor
+            predictor2 = engine._load_model()
+            self.assertEqual(predictor2, 'mock_predictor')
+            self.assertEqual(mock_pred.call_count, 1)
+
+    def test_initialization_failure_raises_ocr_unavailable(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        from .services.ocr.base import OCRUnavailable
+
+        engine = DocTREngine()
+        with patch('doctr.models.ocr_predictor', side_effect=RuntimeError('Out of memory')):
+            with self.assertRaises(OCRUnavailable):
+                engine._load_model()
+            self.assertFalse(DocTREngine.is_model_loaded())
+
+
+
 

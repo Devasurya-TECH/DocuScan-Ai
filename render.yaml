@@ -6,14 +6,14 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     region: singapore        # Options: singapore, oregon, ohio, frankfurt
-    healthCheckPath: /api/health/
+    healthCheckPath: /health/
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true  # Render generates a secure random value automatically
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_ALLOWED_HOSTS
-        value: ".onrender.com"
+        value: ".onrender.com,localhost,127.0.0.1"
       - key: CELERY_ALWAYS_EAGER
         value: "True"
       - key: CELERY_BROKER_URL

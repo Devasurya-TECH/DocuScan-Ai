@@ -4,6 +4,7 @@ Fast, accurate, single-instance deep learning document OCR.
 """
 
 import logging
+import threading
 from importlib.util import find_spec
 import numpy as np
 
@@ -17,26 +18,56 @@ class DocTREngine(OCREngine):
     name = 'doctr'
     model_name = 'db_mobilenet_v3_large+crnn_mobilenet_v3_large'
     _predictor = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def is_model_loaded(cls):
+        """Check if the OCR predictor has been loaded into memory."""
+        return cls._predictor is not None
+
+    @classmethod
+    def reset_model(cls):
+        """Reset the cached predictor (primarily used for testing)."""
+        with cls._lock:
+            cls._predictor = None
 
     def is_available(self):
+        """Check availability without loading PyTorch or model weights."""
         return find_spec('doctr') is not None
 
     def _load_model(self):
+        """
+        Thread-safe lazy initialization for the docTR predictor.
+        Ensures the model is loaded only when an OCR request actually arrives,
+        cached in worker process memory, and protected against race conditions.
+        """
         if not self.is_available():
             raise OCRUnavailable('python-doctr is not installed in this environment.')
-        if DocTREngine._predictor is None:
+
+        if DocTREngine._predictor is not None:
+            return DocTREngine._predictor
+
+        with DocTREngine._lock:
+            # Double-checked locking pattern
+            if DocTREngine._predictor is not None:
+                return DocTREngine._predictor
+
             try:
                 import torch
                 torch.set_num_threads(2)
                 from doctr.models import ocr_predictor
-                logger.info('Initializing docTR OCR predictor (loaded once per worker)...')
-                DocTREngine._predictor = ocr_predictor(
+
+                logger.info('Initializing docTR OCR predictor (thread-safe lazy load)...')
+                predictor = ocr_predictor(
                     det_arch='db_mobilenet_v3_large',
                     reco_arch='crnn_mobilenet_v3_large',
                     pretrained=True,
                 )
-                logger.info('docTR OCR predictor initialized successfully.')
+                DocTREngine._predictor = predictor
+                logger.info('docTR OCR predictor initialized and cached successfully.')
+                return DocTREngine._predictor
             except Exception as exc:
+                logger.exception('Failed to initialize docTR predictor: %s', exc)
                 raise OCRUnavailable(f'Could not initialize docTR predictor: {exc}') from exc
 
     def extract(self, image):

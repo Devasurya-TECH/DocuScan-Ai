@@ -68,8 +68,12 @@ export async function getBenchmarkReport(split = 'development') {
   return response.data
 }
 
+const rawApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || ''
+const hostBase = rawApiUrl ? rawApiUrl.replace(/\/api\/?$/, '').replace(/\/$/, '') : ''
+
 export function resolveImageUrl(value) {
   if (!value) return ''
   if (/^https?:\/\//i.test(value)) return value
-  return value.startsWith('/') ? value : `/${value}`
+  const cleanPath = value.startsWith('/') ? value : `/${value}`
+  return hostBase ? `${hostBase}${cleanPath}` : cleanPath
 }
