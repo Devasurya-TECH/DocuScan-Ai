@@ -1,23 +1,30 @@
 services:
+  # ── Web Service: Django API + React frontend served by Gunicorn ────────────
   - type: web
     name: docuscan-ai
     runtime: docker
-    plan: starter
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore        # Options: singapore, oregon, ohio, frankfurt
     healthCheckPath: /api/health/
     envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true  # Render generates a secure random value automatically
       - key: DJANGO_DEBUG
-        value: "false"
+        value: "False"
       - key: DJANGO_ALLOWED_HOSTS
         value: ".onrender.com"
+      - key: CELERY_ALWAYS_EAGER
+        value: "True"
+      - key: CELERY_BROKER_URL
+        value: "memory://"
+      - key: CELERY_RESULT_BACKEND
+        value: "cache+memory://"
       - key: OCR_DEFAULT_ENGINE
-        value: paddleocr
+        value: "doctr"
       - key: OCR_LANGUAGES
-        value: en,hi
+        value: "en,hi"
       - key: OCR_DEVICE
-        value: cpu
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-    disk:
-      name: docuscan-media
-      mountPath: /app/backend/media
-      sizeGB: 1
+        value: "cpu"
+      - key: PORT
+        value: "8000"
