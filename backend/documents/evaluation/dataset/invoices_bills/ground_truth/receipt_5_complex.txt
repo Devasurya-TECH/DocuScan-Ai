@@ -1,0 +1,38 @@
+RIVERSIDE SUPERMART
+9 Waterside Plaza
+Eastport, ME 04631
+Tel (207) 555-0136
+03/28/2026 06:48 PM
+LANE 07 CASHIER: DANIEL
+MEMBER: ****5521
+ITEM QTY AMT TX
+Granola Bars 12ct 2 10.98 A
+COUPON SAVINGS -1.00 A
+Orange Juice 52oz 1 4.79 A
+Chicken Thighs 2.4lb 1 11.76 A
+Basmati Rice 5lb 1 8.99 A
+Olive Oil 17oz 1 11.49 A
+COUPON SAVINGS -1.50 A
+Paper Towels 6ct 1 12.99 B
+Dish Soap 24oz 2 7.58 B
+Greek Yogurt 32oz 2 11.38 A
+Cheese Slices 24ct 1 5.49 A
+Frozen Pizza 3 19.47 A
+COUPON SAVINGS -2.00 A
+Spinach 10oz 1 2.99 A
+Tomatoes 1.5lb 1 4.47 A
+Pasta Sauce 24oz 2 5.78 A
+Spaghetti 16oz 2 3.38 A
+Trash Bags 30ct 1 7.99 B
+Sparkling Water 12pk 1 5.99 A
+GROSS ITEMS 135.52
+TOTAL SAVINGS -4.50
+SUBTOTAL 131.02
+TAX A 4.00% on 64.26 2.57
+TAX B 7.25% on 28.56 2.07
+TOTAL 135.66
+VISA ****4417 135.66
+AUTH 118203 APPROVED CHIP
+ITEMS SOLD: 23
+TOTAL SAVED: 4.50
+THANK YOU FOR SHOPPING AT RIVERSIDE

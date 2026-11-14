@@ -13,13 +13,18 @@ export async function checkApiHealth() {
   return response.data
 }
 
-export async function listDocuments() {
-  const response = await api.get('/documents/')
+export async function listDocuments(params = {}) {
+  const response = await api.get('/documents/', { params })
   return Array.isArray(response.data) ? response.data : response.data.results || []
 }
 
 export async function getDocument(id) {
   const response = await api.get(`/documents/${id}/`)
+  return response.data
+}
+
+export async function pollDocumentStatus(id) {
+  const response = await api.get(`/documents/${id}/status/`)
   return response.data
 }
 
@@ -40,6 +45,26 @@ export async function saveDocumentCorrection(id, correctedText, verifiedFields =
     corrected_text: correctedText,
     verified_fields: verifiedFields,
   })
+  return response.data
+}
+
+export async function reprocessDocument(id) {
+  const response = await api.post(`/documents/${id}/reprocess/`)
+  return response.data
+}
+
+export async function autocorrectDocument(id, text) {
+  const response = await api.post(`/documents/${id}/autocorrect/`, { text })
+  return response.data
+}
+
+export async function askDocumentQuestion(id, question) {
+  const response = await api.post(`/documents/${id}/ask/`, { question })
+  return response.data
+}
+
+export async function getBenchmarkReport(split = 'development') {
+  const response = await api.get('/benchmark/', { params: { split } })
   return response.data
 }
 

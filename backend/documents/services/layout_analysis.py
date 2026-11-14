@@ -157,20 +157,33 @@ def _table_row(line):
     if not price_entries:
         return None
     price = price_entries[-1]
-    description = [entry for entry in entries if entry['detection_index'] != price['detection_index'] and entry['position']['x'] < price['position']['x']]
-    if not description:
+    left_entries = [entry for entry in entries if entry['detection_index'] != price['detection_index'] and entry['position']['x'] < price['position']['x']]
+    if not left_entries:
         return None
+
+    if len(left_entries) >= 2:
+        first = left_entries[0]
+        second = left_entries[1]
+        gap = second['position']['x'] - _right(first['position'])
+        if gap > 15:
+            cells = [
+                {'text': first['text'], 'position': first['position']},
+                {'text': ' '.join(item['text'] for item in left_entries[1:]), 'position': _union([item['position'] for item in left_entries[1:]])},
+                {'text': price['text'], 'position': price['position']},
+            ]
+            return {'line_id': line['id'], 'cells': cells}
+
     return {
         'line_id': line['id'],
         'cells': [
-            {'text': ' '.join(item['text'] for item in description), 'position': _union([item['position'] for item in description])},
+            {'text': ' '.join(item['text'] for item in left_entries), 'position': _union([item['position'] for item in left_entries])},
             {'text': price['text'], 'position': price['position']},
         ],
     }
 
 
 def detect_tables(lines):
-    """Find consecutive description-plus-price rows, a conservative receipt table heuristic."""
+    """Find consecutive description-plus-price rows, supporting 2-column and multi-column tables."""
     candidates = [_table_row(line) for line in lines]
     groups, current = [], []
     median_height = median([line['position']['height'] for line in lines]) if lines else 20
@@ -194,9 +207,14 @@ def detect_tables(lines):
     tables = []
     for index, rows in enumerate(groups):
         rectangles = [cell['position'] for row in rows for cell in row['cells']]
+        max_cells = max(len(row['cells']) for row in rows)
+        if max_cells == 3:
+            cols = ['description', 'quantity', 'amount']
+        else:
+            cols = ['description', 'amount']
         tables.append({
             'id': f'table_{index}',
-            'columns': ['description', 'amount'],
+            'columns': cols,
             'position': _union(rectangles),
             'line_ids': [row['line_id'] for row in rows],
             'rows': rows,

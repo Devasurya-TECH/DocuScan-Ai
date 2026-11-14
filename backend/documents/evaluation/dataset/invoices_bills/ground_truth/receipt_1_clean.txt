@@ -1,0 +1,20 @@
+GREENFIELD GROCERS
+418 Orchard Lane
+Millbrook, OH 44012
+Tel (440) 555-0172
+Date: 03/14/2026
+Time: 10:42 AM
+Register: 02
+Cashier: Anna
+Whole Milk 1 gal 3.89
+Brown Eggs Dozen 2 @ 4.29 8.58
+Sourdough Loaf 5.75
+Bananas 2.0 lb 1.18
+Cheddar Block 8oz 3.49
+SUBTOTAL 22.89
+TAX 6.5% 1.49
+TOTAL 24.38
+CASH 40.00
+CHANGE 15.62
+THANK YOU FOR SHOPPING
+Items sold: 6

@@ -1,11 +1,13 @@
 """Registry for local OCR adapters without importing optional heavy packages."""
 
+from .doctr_engine import DocTREngine
 from .easy_ocr import EasyOCREngine
 from .paddle_ocr import PaddleOCREngine
 from .trocr import TrOCREngine
 
 
 ENGINE_TYPES = {
+    'doctr': DocTREngine,
     'easyocr': EasyOCREngine,
     'paddleocr': PaddleOCREngine,
     'trocr': TrOCREngine,

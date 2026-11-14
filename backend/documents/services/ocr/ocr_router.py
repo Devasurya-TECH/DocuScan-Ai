@@ -16,7 +16,7 @@ def configured_device():
 
 
 def configured_engine_name():
-    return os.environ.get('OCR_DEFAULT_ENGINE', 'easyocr').lower()
+    return os.environ.get('OCR_DEFAULT_ENGINE', 'doctr').lower()
 
 
 def resolve_engine(name=None, languages=None, device=None):
@@ -26,10 +26,16 @@ def resolve_engine(name=None, languages=None, device=None):
     engine = get_engine(requested, languages, device)
     if engine.is_available():
         return engine, []
-    fallback = get_engine('easyocr', languages, device)
-    if not fallback.is_available():
-        raise OCRUnavailable(f'{requested} is unavailable and EasyOCR fallback is unavailable.')
-    return fallback, [f'Requested OCR engine {requested} is unavailable; using EasyOCR fallback.']
+    # If doctr requested and not available, try easyocr
+    fallback_name = 'easyocr' if requested == 'doctr' else 'doctr'
+    fallback = get_engine(fallback_name, languages, device)
+    if fallback.is_available():
+        return fallback, [f'Requested OCR engine {requested} is unavailable; using {fallback_name} fallback.']
+    # If still not available, check easyocr
+    last_resort = get_engine('easyocr', languages, device)
+    if not last_resort.is_available():
+        raise OCRUnavailable(f'{requested} is unavailable and no local fallback OCR engine is installed.')
+    return last_resort, [f'Requested OCR engine {requested} is unavailable; using EasyOCR fallback.']
 
 
 def run(image, engine_name=None, languages=None, device=None):

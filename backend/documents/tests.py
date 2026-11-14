@@ -44,9 +44,9 @@ class OCRArchitectureTests(SimpleTestCase):
         self.assertEqual(detection['region_type'], 'printed_text')
         self.assertEqual(detection['bounding_box'][0], [1, 2])
 
-    def test_unavailable_optional_engine_uses_easyocr_fallback(self):
+    def test_unavailable_optional_engine_uses_default_fallback(self):
         engine, warnings = resolve_engine('paddleocr')
-        self.assertEqual(engine.name, 'easyocr')
+        self.assertEqual(engine.name, 'doctr')
         self.assertTrue(warnings)
 
     def test_registry_rejects_unknown_engine(self):
@@ -287,6 +287,18 @@ class ExportEndpointTests(TestCase):
         self.assertEqual(export.reconstruction_mode, 'original')
         self.assertTrue(export.file.storage.exists(export.file.name))
 
+    def test_creates_txt_export(self):
+        response = self.client.post(
+            f'/api/documents/{self.document.id}/export/',
+            {'format': 'txt', 'reconstruction_mode': 'clean'},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        export = DocumentExport.objects.get(pk=response.json()['id'])
+        self.assertEqual(export.export_format, 'txt')
+        self.assertTrue(export.file.storage.exists(export.file.name))
+
+
 
 class HumanCorrectionTests(TestCase):
     def setUp(self):
@@ -322,3 +334,182 @@ class FrontendServingTests(TestCase):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<div id="root"></div>', html=False)
+
+
+class UserAuthAndSecurityTests(TestCase):
+    def test_user_registration_and_jwt_login(self):
+        # Register user
+        reg_response = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'password': 'Password123!',
+                'password_confirm': 'Password123!',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(reg_response.status_code, 201)
+        self.assertIn('access', reg_response.json())
+        token = reg_response.json()['access']
+
+        # Get profile with Bearer token
+        profile_response = self.client.get(
+            '/api/auth/me/',
+            HTTP_AUTHORIZATION=f'Bearer {token}'
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(profile_response.json()['username'], 'alice')
+
+    def test_tenant_isolation_prevents_unauthorized_access(self):
+        from django.contrib.auth.models import User
+        user_alice = User.objects.create_user(username='alice_tenant', password='Password123!')
+        user_bob = User.objects.create_user(username='bob_tenant', password='Password123!')
+
+        doc_alice = Document.objects.create(
+            user=user_alice,
+            title='Alice Doc',
+            uploaded_file='documents/alice.png',
+            status='completed',
+            extracted_text='Confidential Alice Data',
+            document_data={'version': 1, 'blocks': []}
+        )
+
+        # Bob logs in
+        login_res = self.client.post(
+            '/api/auth/token/',
+            {'username': 'bob_tenant', 'password': 'Password123!'},
+            content_type='application/json'
+        )
+        bob_token = login_res.json()['access']
+
+        # Bob tries to access Alice's document -> Must return 404
+        bob_res = self.client.get(
+            f'/api/documents/{doc_alice.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {bob_token}'
+        )
+        self.assertEqual(bob_res.status_code, 404)
+
+        # Bob lists documents -> Should not see Alice's document
+        bob_list = self.client.get(
+            '/api/documents/',
+            HTTP_AUTHORIZATION=f'Bearer {bob_token}'
+        )
+        self.assertEqual(bob_list.status_code, 200)
+        bob_results = bob_list.json().get('results', bob_list.json())
+        self.assertEqual(len(bob_results), 0)
+
+
+class DocumentQuestionAnsweringTests(TestCase):
+    def test_rag_answers_grounded_questions_from_document_facts(self):
+        document = Document.objects.create(
+            title='Receipt Acme',
+            uploaded_file='documents/acme.png',
+            status='completed',
+            extracted_text='ACME STORE\nDate: 24 May 2024\nTOTAL $114.63',
+            document_data={
+                'version': 1,
+                'fields': {
+                    'vendor': {'value': 'ACME STORE', 'confidence': 0.98},
+                    'date': {'value': '24 May 2024', 'confidence': 0.95},
+                    'total': {'value': 114.63, 'confidence': 0.96},
+                    'currency': {'value': '$', 'confidence': 0.95},
+                },
+                'blocks': [
+                    {'type': 'heading', 'text': 'ACME STORE', 'source_position': {'x': 10, 'y': 10, 'width': 80, 'height': 20}},
+                    {'type': 'text', 'text': 'TOTAL $114.63', 'source_position': {'x': 10, 'y': 80, 'width': 60, 'height': 15}},
+                ]
+            }
+        )
+
+        # Ask about total
+        res_total = self.client.post(
+            f'/api/documents/{document.id}/ask/',
+            {'question': 'What is the total amount?'},
+            content_type='application/json'
+        )
+        self.assertEqual(res_total.status_code, 200)
+        self.assertTrue(res_total.json()['grounded'])
+        self.assertIn('114.63', res_total.json()['answer'])
+
+        # Ask about vendor
+        res_vendor = self.client.post(
+            f'/api/documents/{document.id}/ask/',
+            {'question': 'Who is the merchant or vendor?'},
+            content_type='application/json'
+        )
+        self.assertEqual(res_vendor.status_code, 200)
+        self.assertTrue(res_vendor.json()['grounded'])
+        self.assertIn('ACME STORE', res_vendor.json()['answer'])
+
+
+class TrOCRSegmentationAndMultiPageTests(SimpleTestCase):
+    def test_trocr_engine_availability_and_line_segmentation(self):
+        from .services.ocr.trocr import TrOCREngine
+        engine = TrOCREngine()
+        # Verify engine metadata
+        self.assertEqual(engine.name, 'trocr')
+        self.assertEqual(engine.model_name, 'microsoft/trocr-base-handwritten')
+        self.assertTrue(engine.is_available())
+
+        # Create a synthetic image with 2 horizontal text lines
+        synthetic = np.full((120, 240, 3), 255, dtype=np.uint8)
+        # Line 1: black horizontal bar simulating a word
+        synthetic[25:35, 30:180] = 0
+        # Line 2: black horizontal bar simulating second line
+        synthetic[75:85, 30:190] = 0
+
+        boxes = engine._segment_handwritten_lines(synthetic)
+        self.assertGreaterEqual(len(boxes), 1)
+        # All boxes should have positive width and height
+        for x, y, w, h in boxes:
+            self.assertGreater(w, 0)
+            self.assertGreater(h, 0)
+
+
+class DocTREngineAndReprocessTests(TestCase):
+    def test_doctr_engine_registered_and_available(self):
+        from .services.ocr.doctr_engine import DocTREngine
+        from .services.ocr.model_registry import get_engine
+        engine = get_engine('doctr')
+        self.assertIsInstance(engine, DocTREngine)
+        self.assertEqual(engine.name, 'doctr')
+        self.assertEqual(engine.model_name, 'db_mobilenet_v3_large+crnn_mobilenet_v3_large')
+        self.assertTrue(engine.is_available())
+
+    def test_document_reprocess_endpoint(self):
+        doc = Document.objects.create(
+            uploaded_file='documents/reprocess-test.png',
+            status='failed',
+            failure_reason='Network timeout during scan',
+        )
+        with patch('documents.tasks.process_document_task.delay') as mock_task:
+            response = self.client.post(f'/api/documents/{doc.id}/reprocess/')
+            self.assertEqual(response.status_code, 200)
+            mock_task.assert_called_once_with(doc.id)
+            doc.refresh_from_db()
+            self.assertEqual(doc.status, 'processing')
+            self.assertEqual(doc.progress_stage, 'reprocessing')
+            self.assertEqual(doc.failure_reason, '')
+
+    def test_document_autocorrect_endpoint(self):
+        doc = Document.objects.create(
+            uploaded_file='documents/autocorrect-test.png',
+            status='completed',
+            extracted_text='Brain st scan with reciept and amout $45.00',
+        )
+        response = self.client.post(
+            f'/api/documents/{doc.id}/autocorrect/',
+            {'text': doc.extracted_text},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn('Brain', data['corrected_text'])
+        self.assertNotIn('Brain st', data['corrected_text'])
+        self.assertIn('receipt', data['corrected_text'].lower())
+        self.assertIn('amount', data['corrected_text'].lower())
+        self.assertGreaterEqual(data['changes_count'], 2)
+
+
+

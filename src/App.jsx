@@ -1,28 +1,50 @@
 import { useEffect, useState } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, Navigate } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import Dashboard from './pages/Dashboard'
 import NewScan from './pages/NewScan'
 import Documents from './pages/Documents'
-import DocumentDetails from './pages/DocumentDetails'
+import WorkspaceDetail from './pages/WorkspaceDetail'
 import Settings from './pages/Settings'
+import Login from './pages/Login'
+import Register from './pages/Register'
 import { LanguageProvider } from './i18n'
+import { AuthProvider, useAuth } from './context/AuthContext'
+
+function AppContent({ theme, setTheme }) {
+  return (
+    <AppShell theme={theme} setTheme={setTheme}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/scan" element={<NewScan />} />
+        <Route path="/documents" element={<Documents />} />
+        <Route path="/documents/:id" element={<WorkspaceDetail />} />
+        <Route path="/documents/:id/workspace" element={<WorkspaceDetail />} />
+        <Route path="/settings" element={<Settings theme={theme} setTheme={setTheme} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppShell>
+  )
+}
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('docuscan-theme') || 'light')
+
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
+    const isDark = theme === 'dark'
+    document.documentElement.classList.toggle('dark', isDark)
+    document.documentElement.setAttribute('data-theme', theme)
+    document.body.className = isDark ? 'dark bg-[#07111a] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
     localStorage.setItem('docuscan-theme', theme)
   }, [theme])
 
-  return <LanguageProvider><AppShell theme={theme} setTheme={setTheme}>
-    <Routes>
-      <Route path="/" element={<Dashboard />} />
-      <Route path="/scan" element={<NewScan />} />
-      <Route path="/documents" element={<Documents />} />
-      <Route path="/documents/:id" element={<DocumentDetails />} />
-      <Route path="/settings" element={<Settings theme={theme} setTheme={setTheme} />} />
-      <Route path="*" element={<Dashboard />} />
-    </Routes>
-  </AppShell></LanguageProvider>
+  return (
+    <LanguageProvider>
+      <AuthProvider>
+        <AppContent theme={theme} setTheme={setTheme} />
+      </AuthProvider>
+    </LanguageProvider>
+  )
 }

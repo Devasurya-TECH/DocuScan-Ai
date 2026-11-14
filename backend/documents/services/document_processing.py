@@ -44,11 +44,22 @@ def _candidate_score(detections):
     return round(weighted_confidence + (coverage * 0.08) - (weak_fragments * 0.5), 6)
 
 
+def _resize_if_oversized(image, max_dim=2048):
+    h, w = image.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / float(max(h, w))
+        new_w, new_h = int(w * scale), int(h * scale)
+        return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return image
+
+
 def select_ocr_candidate(image, languages=None):
-    """Use one fast pass, then recover only when its signal is weak."""
+    """Use one fast pass with docTR/primary engine, then recover only when its signal is weak."""
+    resized = _resize_if_oversized(image, max_dim=2048)
     candidates = []
+
     def add_candidates(strategy_names):
-        for strategy, candidate_image in build_ocr_variants(image, strategy_names).items():
+        for strategy, candidate_image in build_ocr_variants(resized, strategy_names).items():
             detections, elapsed = run_ocr(candidate_image, languages=languages)
             confidences = [item['confidence'] for item in detections]
             candidates.append({
@@ -57,18 +68,24 @@ def select_ocr_candidate(image, languages=None):
                 'detections': detections,
                 'elapsed_seconds': elapsed,
                 'score': _candidate_score(detections),
-                'average_confidence': sum(confidences) / len(confidences) if confidences else None,
+                'average_confidence': (
+                    sum(confidences) / len(confidences) if confidences else None
+                ),
             })
 
     add_candidates(PRODUCTION_OCR_VARIANTS)
     primary = candidates[0]
     if (
-        not primary['detections']
+        primary['score'] <= 0
         or primary['average_confidence'] is None
         or primary['average_confidence'] < RECOVERY_CONFIDENCE_THRESHOLD
     ):
-        add_candidates(recovery_strategies(assess_quality(image)))
+        add_candidates(recovery_strategies(assess_quality(resized)))
+
     return max(candidates, key=lambda candidate: candidate['score']), candidates
+
+
+from .pdf_ingestion import is_pdf, extract_pdf_data
 
 
 def process_document(document, languages=None):
@@ -77,7 +94,37 @@ def process_document(document, languages=None):
     Boundary detection is best-effort: a valid image that has no detectable page
     is still enhanced and sent to OCR instead of being discarded.
     """
-    source_image = load_image(document.uploaded_file.path)
+    file_path = document.uploaded_file.path
+    
+    # Handle multi-page PDF documents
+    if is_pdf(file_path):
+        document.progress_stage = 'pdf_extraction'
+        document.progress_percent = 20
+        document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
+        
+        total_pages, pages = extract_pdf_data(file_path)
+        document.is_multipage = total_pages > 1
+        document.page_count = total_pages
+        document.pages_data = pages
+        
+        # If PDF has extractable text, combine
+        combined_pdf_text = '\n\n'.join(p['text'] for p in pages if p.get('text'))
+        if combined_pdf_text.strip():
+            document.extracted_text = combined_pdf_text
+            document.ocr_engine = 'pypdf:digital_pdf'
+            document.status = 'completed'
+            document.progress_stage = 'completed'
+            document.progress_percent = 100
+            document.document_type = 'general_printed_document'
+            document.save()
+            return document
+
+    # Standard image / photographed document pipeline
+    document.progress_stage = 'boundary_detection'
+    document.progress_percent = 25
+    document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
+    
+    source_image = load_image(file_path)
 
     corners, capture = find_safe_document_boundary(source_image)
     try:
@@ -86,6 +133,10 @@ def process_document(document, languages=None):
         scan_image = correct_perspective(source_image, corners)
     except ValueError:
         scan_image = source_image
+
+    document.progress_stage = 'ocr_inference'
+    document.progress_percent = 50
+    document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
     selected, candidates = select_ocr_candidate(scan_image, languages=languages)
     processed_image = selected['image']
@@ -99,6 +150,10 @@ def process_document(document, languages=None):
         ContentFile(data.tobytes()),
         save=False,
     )
+
+    document.progress_stage = 'layout_analysis'
+    document.progress_percent = 75
+    document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
     detections = selected['detections']
     script_metadata = annotate_detection_languages(detections)
@@ -134,6 +189,11 @@ def process_document(document, languages=None):
         ],
     }
     document.processing_duration = round(sum(candidate['elapsed_seconds'] for candidate in candidates), 3)
+    
+    document.progress_stage = 'document_understanding'
+    document.progress_percent = 90
+    document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
+    
     document.document_data = build_document_representation(
         detections,
         page_width=processed_image.shape[1],
@@ -141,5 +201,7 @@ def process_document(document, languages=None):
     )
     document.document_type = document.document_data['document_type']['type']
     document.status = 'completed'
+    document.progress_stage = 'completed'
+    document.progress_percent = 100
     document.save()
     return document

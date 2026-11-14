@@ -11,5 +11,31 @@
     "development_per_category": 7,
     "holdout_per_category": 3
   },
-  "samples": []
+  "samples": [
+    {
+      "id": "receipt_1_clean",
+      "category": "invoices_bills",
+      "split": "development"
+    },
+    {
+      "id": "receipt_2_tilted",
+      "category": "invoices_bills",
+      "split": "development"
+    },
+    {
+      "id": "receipt_3_lowlight",
+      "category": "invoices_bills",
+      "split": "development"
+    },
+    {
+      "id": "receipt_4_wrinkled",
+      "category": "invoices_bills",
+      "split": "holdout"
+    },
+    {
+      "id": "receipt_5_complex",
+      "category": "invoices_bills",
+      "split": "holdout"
+    }
+  ]
 }
