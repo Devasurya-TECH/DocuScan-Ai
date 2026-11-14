@@ -3,26 +3,17 @@ import { Route, Routes, Navigate } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import Dashboard from './pages/Dashboard'
 import NewScan from './pages/NewScan'
-import Documents from './pages/Documents'
 import WorkspaceDetail from './pages/WorkspaceDetail'
-import Settings from './pages/Settings'
-import Login from './pages/Login'
-import Register from './pages/Register'
 import { LanguageProvider } from './i18n'
-import { AuthProvider, useAuth } from './context/AuthContext'
 
 function AppContent({ theme, setTheme }) {
   return (
     <AppShell theme={theme} setTheme={setTheme}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/scan" element={<NewScan />} />
-        <Route path="/documents" element={<Documents />} />
         <Route path="/documents/:id" element={<WorkspaceDetail />} />
         <Route path="/documents/:id/workspace" element={<WorkspaceDetail />} />
-        <Route path="/settings" element={<Settings theme={theme} setTheme={setTheme} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
@@ -42,9 +33,7 @@ export default function App() {
 
   return (
     <LanguageProvider>
-      <AuthProvider>
-        <AppContent theme={theme} setTheme={setTheme} />
-      </AuthProvider>
+      <AppContent theme={theme} setTheme={setTheme} />
     </LanguageProvider>
   )
 }
