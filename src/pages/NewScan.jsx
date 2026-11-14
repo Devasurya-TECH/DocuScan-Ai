@@ -117,9 +117,11 @@ export default function NewScan() {
   }
 
   const pollStatus = (docId) => {
+    let consecutiveErrors = 0
     const interval = setInterval(async () => {
       try {
         const res = await pollDocumentStatus(docId)
+        consecutiveErrors = 0
         setProcessingStage(res.progress_stage || 'processing')
 
         if (res.status === 'completed') {
@@ -131,8 +133,13 @@ export default function NewScan() {
           setError(res.failure_reason || 'Processing failed. Please try again.')
           setState('failed')
         }
-      } catch {
-        // Continue polling
+      } catch (err) {
+        consecutiveErrors++
+        if (consecutiveErrors >= 10) {
+          clearInterval(interval)
+          setError('Server took too long to respond. Please try uploading again.')
+          setState('failed')
+        }
       }
     }, 1500)
   }

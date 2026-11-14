@@ -66,8 +66,10 @@ class DocTREngine(OCREngine):
         else:
             raise ValueError(f'Unsupported image input type for docTR: {type(image)}')
 
-        # Perform inference
-        result = DocTREngine._predictor(doc)
+        # Perform inference with zero gradient memory retention
+        import torch
+        with torch.inference_mode():
+            result = DocTREngine._predictor(doc)
         export = result.export()
 
         detections = []
