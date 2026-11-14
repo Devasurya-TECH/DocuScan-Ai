@@ -196,10 +196,36 @@ export default function WorkspaceDetail() {
         await saveDocumentCorrection(id, text)
       }
       const res = await exportDocument(id, format, 'clean')
-      const anchor = window.document.createElement('a')
-      anchor.href = resolveImageUrl(res.file)
-      anchor.download = ''
-      anchor.click()
+      const fileUrl = resolveImageUrl(res.file)
+      const baseName = doc?.title || doc?.filename || `document_${id}`
+      const cleanName = baseName.replace(/\.[^/.]+$/, '')
+      const fileName = `${cleanName}_export.${format}`
+
+      // Attempt in-browser blob download first (same-origin blob respects filename and stays on page)
+      try {
+        const response = await fetch(fileUrl)
+        if (!response.ok) throw new Error('Fetch failed')
+        const blob = await response.blob()
+        const blobUrl = window.URL.createObjectURL(blob)
+        const anchor = window.document.createElement('a')
+        anchor.href = blobUrl
+        anchor.download = fileName
+        window.document.body.appendChild(anchor)
+        anchor.click()
+        window.document.body.removeChild(anchor)
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000)
+      } catch {
+        // Fallback for cross-origin downloads: open in new tab with target="_blank"
+        // so the active document workspace tab is NEVER replaced or navigated away from
+        const anchor = window.document.createElement('a')
+        anchor.href = fileUrl
+        anchor.target = '_blank'
+        anchor.rel = 'noopener noreferrer'
+        anchor.download = fileName
+        window.document.body.appendChild(anchor)
+        anchor.click()
+        window.document.body.removeChild(anchor)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || `Failed to generate ${format.toUpperCase()} export.`)
     } finally {
