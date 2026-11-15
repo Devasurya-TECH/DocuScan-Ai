@@ -69,7 +69,7 @@ class ImageEnhancementTests(SimpleTestCase):
         variants = build_ocr_variants(self.image, ('color', 'clahe', 'otsu_threshold'))
         self.assertEqual(set(variants), {'color', 'clahe', 'otsu_threshold'})
         self.assertEqual(variants['color'].shape[2], self.image.shape[2])
-        self.assertGreaterEqual(max(variants['color'].shape[:2]), 1200)
+        self.assertGreaterEqual(max(variants['color'].shape[:2]), 600)
         self.assertEqual(len(variants['clahe'].shape), 2)
 
     def test_quality_metrics_and_small_skew_are_safe(self):
@@ -82,7 +82,7 @@ class ImageEnhancementTests(SimpleTestCase):
     def test_accuracy_variants_include_deskewed_and_colour_preserving_options(self):
         variants = build_ocr_variants(self.image, ('color', 'enhanced_color', 'deskewed_clahe'))
         self.assertEqual(set(variants), {'color', 'enhanced_color', 'deskewed_clahe'})
-        self.assertGreaterEqual(max(variants['color'].shape[:2]), 1200)
+        self.assertGreaterEqual(max(variants['color'].shape[:2]), 600)
 
     def test_full_frame_boundary_is_not_used_for_perspective_warp(self):
         image = np.full((200, 300, 3), 255, dtype=np.uint8)

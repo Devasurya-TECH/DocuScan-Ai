@@ -88,7 +88,7 @@ def select_ocr_candidate(image, languages=None):
         or primary['average_confidence'] is None
         or primary['average_confidence'] < RECOVERY_CONFIDENCE_THRESHOLD
     ):
-        add_candidates(recovery_strategies(assess_quality(resized)))
+        add_candidates(RECOVERY_OCR_VARIANTS)
 
     return max(candidates, key=lambda candidate: candidate['score']), candidates
 
