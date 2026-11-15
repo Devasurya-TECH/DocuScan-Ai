@@ -106,6 +106,10 @@ class DocumentUploadView(generics.CreateAPIView):
     permission_classes = [AllowAny]  # Supports token auth or demo fallback
 
     def perform_create(self, serializer):
+        # Public jobs are deliberately short-lived; opportunistic cleanup avoids
+        # needing a paid scheduler on the free deployment.
+        from .services.temporary_storage import purge_expired_documents
+        purge_expired_documents()
         user = _get_user_or_default(self.request)
         languages = tuple(
             lang.strip() for lang in serializer.validated_data.pop('ocr_languages', '').split(',') if lang.strip()

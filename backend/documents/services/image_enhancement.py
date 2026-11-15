@@ -126,7 +126,14 @@ def assess_quality(image):
 
 
 def recovery_strategies(quality):
-    strategies = ['enhanced_color', 'deskewed_clahe']
+    # Recover only the weakness detected in the source; each extra OCR pass is costly.
+    strategies = []
+    if quality.get('low_resolution_risk'):
+        strategies.append('enhanced_color')
+    if quality.get('low_contrast_risk'):
+        strategies.append('illumination_corrected')
+    if quality.get('blur_risk'):
+        strategies.append('sharpened')
     if quality.get('possible_glare_ratio', 0) > 0.08 or quality.get('low_contrast_risk'):
         strategies.append('illumination_corrected')
     if quality.get('blur_risk'):

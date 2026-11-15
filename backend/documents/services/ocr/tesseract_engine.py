@@ -94,7 +94,11 @@ class TesseractEngine(OCREngine):
         # Optimize Tesseract for fast CPU document OCR:
         # --oem 1: Neural nets LSTM engine only (fastest & most accurate for modern Tesseract)
         # --psm 3: Fully automatic page segmentation without OSD (avoids expensive orientation search)
-        fast_config = os.environ.get('TESSERACT_CONFIG', '--oem 1 --psm 3')
+        # Receipts and close crops have a different layout from a full page.  Do
+        # not pay for OSD; choose only between Tesseract's two practical modes.
+        height, width = rgb_image.shape[:2]
+        default_psm = 6 if max(height, width) < 900 or min(height, width) < 500 else 3
+        fast_config = os.environ.get('TESSERACT_CONFIG', f'--oem 1 --psm {default_psm}')
 
         try:
             data = pytesseract.image_to_data(

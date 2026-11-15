@@ -1,6 +1,7 @@
 import os
 import logging
 import tempfile
+import time
 from pathlib import Path
 
 import cv2
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 # Normal uploads start with the best-performing baseline (colour). Recovery
 # variants run only when that first OCR pass is too weak to trust.
 PRODUCTION_OCR_VARIANTS = ('color',)
-RECOVERY_OCR_VARIANTS = ('enhanced_color',)
 RECOVERY_CONFIDENCE_THRESHOLD = 0.50
 
 
@@ -81,6 +81,7 @@ def select_ocr_candidate(image, languages=None):
                 ),
             })
 
+    quality = assess_quality(resized)
     add_candidates(PRODUCTION_OCR_VARIANTS)
     primary = candidates[0]
     if (
@@ -88,12 +89,17 @@ def select_ocr_candidate(image, languages=None):
         or primary['average_confidence'] is None
         or primary['average_confidence'] < RECOVERY_CONFIDENCE_THRESHOLD
     ):
-        add_candidates(RECOVERY_OCR_VARIANTS)
+        # A weak primary result alone is not enough reason to run every filter.
+        # Pick one recovery pass matching the observed capture defect.
+        recovery = recovery_strategies(quality)
+        if recovery:
+            add_candidates(recovery[:1])
 
     return max(candidates, key=lambda candidate: candidate['score']), candidates
 
 
-from .pdf_ingestion import is_pdf, extract_pdf_data
+from .pdf_ingestion import is_pdf, extract_pdf_data, render_pdf_page
+from .word_ingestion import extract_docx_data
 
 
 def safe_open_image(field_file):
@@ -165,9 +171,27 @@ def process_document(document, languages=None):
     if not document.uploaded_file:
         raise ValueError("Document has no uploaded file associated.")
 
-    # Determine if the file is a PDF
+    pipeline_started = time.monotonic()
+    # Determine if the file is a PDF or Word document.
     file_name = document.uploaded_file.name.lower() if document.uploaded_file.name else ''
     is_pdf_file = file_name.endswith('.pdf')
+    if file_name.endswith('.doc'):
+        raise ValueError('Legacy .doc files are not supported safely on this server. Please use DOCX or PDF.')
+    if file_name.endswith('.docx'):
+        document.progress_stage, document.progress_percent = 'word_extraction', 40
+        document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
+        source_path, is_temp = safe_get_pdf_path(document.uploaded_file)
+        try:
+            document.extracted_text = extract_docx_data(source_path)
+        finally:
+            if is_temp and os.path.exists(source_path):
+                os.unlink(source_path)
+        document.ocr_engine = 'python-docx:direct_extract'
+        document.document_type = 'word_document'
+        document.processing_duration = round(time.monotonic() - pipeline_started, 3)
+        document.status, document.progress_stage, document.progress_percent = 'completed', 'completed', 100
+        document.save()
+        return document
 
     # Handle multi-page PDF documents
     if is_pdf_file:
@@ -184,15 +208,30 @@ def process_document(document, languages=None):
             document.page_count = total_pages
             document.pages_data = pages
 
-            # If PDF has extractable text, combine
-            combined_pdf_text = '\n\n'.join(p['text'] for p in pages if p.get('text'))
+            # Extract text per page and OCR only scanned pages. Rendering is one
+            # page at a time so a long PDF does not accumulate bitmap memory.
+            scanned_detections = []
+            for page_index, page in enumerate(pages):
+                if page.get('text', '').strip():
+                    continue
+                page_started = time.monotonic()
+                page_image = render_pdf_page(pdf_path, page_index)
+                selected, _ = select_ocr_candidate(page_image, languages=languages)
+                page['text'] = '\n'.join(item['text'] for item in selected['detections'])
+                page['ocr_seconds'] = round(time.monotonic() - page_started, 3)
+                scanned_detections.extend(selected['detections'])
+                del page_image
+            combined_pdf_text = '\n\n'.join(p.get('text', '') for p in pages)
             if combined_pdf_text.strip():
                 document.extracted_text = combined_pdf_text
-                document.ocr_engine = 'pypdf:digital_pdf'
+                document.ocr_results = scanned_detections
+                document.ocr_engine = 'tesseract:scanned_pdf' if scanned_detections else 'pypdf:digital_pdf'
                 document.status = 'completed'
                 document.progress_stage = 'completed'
                 document.progress_percent = 100
                 document.document_type = 'general_printed_document'
+                document.processing_duration = round(time.monotonic() - pipeline_started, 3)
+                document.quality_metrics = {'stage_seconds': {'total': document.processing_duration}}
                 # Check status before final save
                 if document.id:
                     current = Document.objects.filter(pk=document.id).values('status', 'job_id').first()
@@ -217,10 +256,13 @@ def process_document(document, languages=None):
     document.progress_percent = 25
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
+    decode_started = time.monotonic()
     source_image = safe_open_image(document.uploaded_file)
     # Downsample high-res inputs to 1280 max dimension upfront to save memory and acceleration
     source_image = _resize_if_oversized(source_image, max_dim=1280)
+    decode_elapsed = round(time.monotonic() - decode_started, 3)
 
+    boundary_started = time.monotonic()
     corners, capture = find_safe_document_boundary(source_image)
     try:
         if corners is None:
@@ -228,6 +270,7 @@ def process_document(document, languages=None):
         scan_image = correct_perspective(source_image, corners)
     except ValueError:
         scan_image = source_image
+    boundary_elapsed = round(time.monotonic() - boundary_started, 3)
 
     document.progress_stage = 'ocr_inference'
     document.progress_percent = 50
@@ -236,8 +279,10 @@ def process_document(document, languages=None):
     # Explicitly release database connection before the compute-heavy OCR candidate selection.
     # Tesseract and OCR variant evaluation run without needing an open DB socket.
     db_connections.close_all()
+    ocr_started = time.monotonic()
     selected, candidates = select_ocr_candidate(scan_image, languages=languages)
     close_old_connections()
+    ocr_elapsed = round(time.monotonic() - ocr_started, 3)
     processed_image = selected['image']
     encoded, data = cv2.imencode('.png', processed_image)
     if not encoded:
@@ -270,6 +315,12 @@ def process_document(document, languages=None):
     document.boundary_detected = corners is not None
     document.quality_metrics = {
         **assess_quality(source_image),
+        'stage_seconds': {
+            'decode_and_resize': decode_elapsed,
+            'boundary_and_warp': boundary_elapsed,
+            'ocr_and_selection': ocr_elapsed,
+            'total': round(time.monotonic() - pipeline_started, 3),
+        },
         'capture': capture,
         'script_detection': script_metadata,
         'ocr_candidates': [
@@ -287,7 +338,7 @@ def process_document(document, languages=None):
             for item in detections if item['confidence'] < 0.70
         ],
     }
-    document.processing_duration = round(sum(candidate['elapsed_seconds'] for candidate in candidates), 3)
+    document.processing_duration = round(time.monotonic() - pipeline_started, 3)
     
     document.progress_stage = 'document_understanding'
     document.progress_percent = 90
