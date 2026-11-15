@@ -1,10 +1,12 @@
 import os
+import logging
 import tempfile
 from pathlib import Path
 
 import cv2
 import numpy as np
 from django.core.files.base import ContentFile
+from django.db import close_old_connections, connections as db_connections
 
 from .image_processing import correct_perspective, load_image
 from .image_enhancement import assess_quality, build_ocr_variants, recovery_strategies
@@ -12,6 +14,9 @@ from .ocr_service import run_ocr
 from .document_representation import build_document_representation
 from .capture_analysis import find_safe_document_boundary
 from .script_detection import annotate_detection_languages
+from documents.models import Document
+
+logger = logging.getLogger(__name__)
 
 
 # Benchmarks can include every variant. The upload path intentionally limits
@@ -172,7 +177,9 @@ def process_document(document, languages=None):
 
         pdf_path, is_temp = safe_get_pdf_path(document.uploaded_file)
         try:
+            db_connections.close_all()
             total_pages, pages = extract_pdf_data(pdf_path)
+            close_old_connections()
             document.is_multipage = total_pages > 1
             document.page_count = total_pages
             document.pages_data = pages
@@ -186,6 +193,16 @@ def process_document(document, languages=None):
                 document.progress_stage = 'completed'
                 document.progress_percent = 100
                 document.document_type = 'general_printed_document'
+                # Check status before final save
+                if document.id:
+                    current = Document.objects.filter(pk=document.id).values('status', 'job_id').first()
+                    if current and current['status'] != 'processing':
+                        logger.warning(
+                            "Document %s status was modified to '%s' externally; preserving status.",
+                            document.id, current['status'],
+                        )
+                        document.status = current['status']
+                        return document
                 document.save()
                 return document
         finally:
@@ -215,7 +232,11 @@ def process_document(document, languages=None):
     document.progress_percent = 50
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
+    # Explicitly release database connection before the compute-heavy OCR candidate selection.
+    # Tesseract and OCR variant evaluation run for 30-90s with zero DB interaction.
+    db_connections.close_all()
     selected, candidates = select_ocr_candidate(scan_image, languages=languages)
+    close_old_connections()
     processed_image = selected['image']
     encoded, data = cv2.imencode('.png', processed_image)
     if not encoded:
@@ -277,6 +298,27 @@ def process_document(document, languages=None):
         page_height=processed_image.shape[0],
     )
     document.document_type = document.document_data['document_type']['type']
+
+    # Optimistic concurrency check before marking completed:
+    # Ensure the document was not marked failed, cancelled, or superseded by a newer retry
+    close_old_connections()
+    if document.id:
+        current_state = Document.objects.filter(pk=document.id).values('status', 'job_id').first()
+        if current_state:
+            if current_state['status'] != 'processing':
+                logger.warning(
+                    "Document %s status was externally modified to '%s'; preserving state, not completing.",
+                    document.id, current_state['status'],
+                )
+                document.status = current_state['status']
+                return document
+            if document.job_id and current_state['job_id'] != document.job_id:
+                logger.warning(
+                    "Document %s job_id was superseded (%s -> %s); discarding results.",
+                    document.id, document.job_id, current_state['job_id'],
+                )
+                return document
+
     document.status = 'completed'
     document.progress_stage = 'completed'
     document.progress_percent = 100

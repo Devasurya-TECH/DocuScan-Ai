@@ -104,7 +104,7 @@ if database_url:
         'PASSWORD': urllib.parse.unquote(db_url.password or ''),
         'HOST': db_url.hostname,
         'PORT': db_url.port or 5432,
-        'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '600')),
+        'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '0')),
     }
     if db_options:
         DATABASES['default']['OPTIONS'] = db_options

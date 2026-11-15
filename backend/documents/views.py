@@ -153,6 +153,24 @@ class DocumentListView(generics.ListAPIView):
             from django.db.models import Q
             qs = Document.objects.filter(Q(user=user) | Q(user__isnull=True)).order_by('-created_at')
         
+        # Passive recovery for orphaned processing documents whose polling stopped
+        from datetime import timedelta
+        from .tasks import get_active_tasks
+        active_ids = list(get_active_tasks().keys())
+        stale_cutoff = timezone.now() - timedelta(seconds=DocumentStatusView._STALE_PROCESSING_SECONDS)
+        stale_filter = qs.filter(status='processing', updated_at__lt=stale_cutoff)
+        if active_ids:
+            stale_filter = stale_filter.exclude(id__in=active_ids)
+        stale_filter.update(
+            status='failed',
+            progress_stage='failed',
+            failure_reason=(
+                'Processing was interrupted (likely a server restart or '
+                'memory limit). Click Reprocess to try again.'
+            ),
+            updated_at=timezone.now(),
+        )
+
         # Search filter
         search_query = self.request.query_params.get('search', '').strip()
         if search_query:
@@ -189,25 +207,39 @@ class DocumentStatusView(APIView):
 
     # Jobs stuck in 'processing' longer than this have been interrupted (server
     # restart, OOM kill, etc.) and will never complete on their own.
-    _STALE_PROCESSING_SECONDS = 180  # 3 minutes
+    # This threshold must be lower than the frontend polling timeout (120 s) so
+    # that stale detection fires while the browser is still polling and the user
+    # receives an actionable 'failed' status rather than a silent UI timeout.
+    _STALE_PROCESSING_SECONDS = 110
 
     def get(self, request, pk):
         document = _get_user_document(pk, request)
 
-        # Lazy stale detection: runs only when a client actually polls the
-        # document. Avoids a costly startup DB-wide sweep.
+        # Stale detection: only operates on orphaned processing documents.
+        # Documents actively queued or running in this process are protected.
         if document.status == 'processing':
+            from .tasks import is_document_active
+            if is_document_active(document.id):
+                # Actively executing or waiting for OCR semaphore in memory.
+                # Must NEVER be marked stale while alive.
+                return Response(DocumentStatusSerializer(document).data)
+
             age = (timezone.now() - document.updated_at).total_seconds()
             if age > self._STALE_PROCESSING_SECONDS:
-                document.status = 'failed'
-                document.progress_stage = 'failed'
-                document.failure_reason = (
-                    'Processing was interrupted (likely a server restart or '
-                    'memory limit). Click Reprocess to try again.'
+                updated_count = Document.objects.filter(
+                    pk=document.pk,
+                    status='processing',
+                ).update(
+                    status='failed',
+                    progress_stage='failed',
+                    failure_reason=(
+                        'Processing was interrupted (likely a server restart or '
+                        'memory limit). Click Reprocess to try again.'
+                    ),
+                    updated_at=timezone.now(),
                 )
-                document.save(update_fields=[
-                    'status', 'progress_stage', 'failure_reason', 'updated_at'
-                ])
+                if updated_count > 0:
+                    document.refresh_from_db()
 
         return Response(DocumentStatusSerializer(document).data)
 
@@ -259,11 +291,13 @@ def document_correction_view(request, pk):
 def document_reprocess_view(request, pk):
     """Re-triggers OCR processing on an existing document."""
     document = _get_user_document(pk, request)
+    new_job_id = str(uuid.uuid4())
+    document.job_id = new_job_id
     document.status = 'processing'
     document.progress_stage = 'reprocessing'
     document.progress_percent = 10
     document.failure_reason = ''
-    document.save(update_fields=['status', 'progress_stage', 'progress_percent', 'failure_reason', 'updated_at'])
+    document.save(update_fields=['job_id', 'status', 'progress_stage', 'progress_percent', 'failure_reason', 'updated_at'])
 
     try:
         process_document_task.delay(document.id)
