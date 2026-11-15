@@ -14,7 +14,7 @@ def resize_for_ocr(image, max_dimension=2000):
     return cv2.resize(image, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
 
 
-def upscale_for_ocr(image, minimum_dimension=1200, maximum_dimension=2048):
+def upscale_for_ocr(image, minimum_dimension=1200, maximum_dimension=1600):
     """Increase small captures before OCR while never enlarging past a safe limit.
 
     Phone photos are normally already large enough. Small screenshots and low

@@ -91,10 +91,16 @@ class TesseractEngine(OCREngine):
 
         lang_str = self._get_tesseract_languages()
 
+        # Optimize Tesseract for fast CPU document OCR:
+        # --oem 1: Neural nets LSTM engine only (fastest & most accurate for modern Tesseract)
+        # --psm 3: Fully automatic page segmentation without OSD (avoids expensive orientation search)
+        fast_config = os.environ.get('TESSERACT_CONFIG', '--oem 1 --psm 3')
+
         try:
             data = pytesseract.image_to_data(
                 rgb_image,
                 lang=lang_str,
+                config=fast_config,
                 output_type=pytesseract.Output.DICT,
             )
         except Exception as exc:
@@ -105,6 +111,7 @@ class TesseractEngine(OCREngine):
                     data = pytesseract.image_to_data(
                         rgb_image,
                         lang='eng',
+                        config=fast_config,
                         output_type=pytesseract.Output.DICT,
                     )
                 except Exception as inner_exc:

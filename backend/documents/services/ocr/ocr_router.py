@@ -8,7 +8,9 @@ from .model_registry import get_engine
 
 
 def configured_languages():
-    return tuple(language.strip() for language in os.environ.get('OCR_LANGUAGES', 'en,hi').split(',') if language.strip()) or ('en',)
+    # Production default: 'en' for fastest single-pass inference.
+    # Multi-language 'en,hi' is supported via request or OCR_LANGUAGES env var.
+    return tuple(language.strip() for language in os.environ.get('OCR_LANGUAGES', 'en').split(',') if language.strip()) or ('en',)
 
 
 def configured_device():

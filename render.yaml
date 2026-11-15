@@ -23,7 +23,7 @@ services:
       - key: OCR_DEFAULT_ENGINE
         value: "tesseract"
       - key: OCR_LANGUAGES
-        value: "en,hi"
+        value: "en"
       - key: OCR_DEVICE
         value: "cpu"
       - key: CORS_ALLOWED_ORIGINS

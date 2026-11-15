@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 # Normal uploads start with the best-performing baseline (colour). Recovery
 # variants run only when that first OCR pass is too weak to trust.
 PRODUCTION_OCR_VARIANTS = ('color',)
-RECOVERY_OCR_VARIANTS = ('enhanced_color', 'deskewed_clahe')
-RECOVERY_CONFIDENCE_THRESHOLD = 0.70
+RECOVERY_OCR_VARIANTS = ('enhanced_color',)
+RECOVERY_CONFIDENCE_THRESHOLD = 0.50
 
 
 def _candidate_score(detections):
@@ -218,6 +218,7 @@ def process_document(document, languages=None):
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
     source_image = safe_open_image(document.uploaded_file)
+    # Downsample high-res inputs to 1280 max dimension upfront to save memory and acceleration
     source_image = _resize_if_oversized(source_image, max_dim=1280)
 
     corners, capture = find_safe_document_boundary(source_image)
@@ -233,7 +234,7 @@ def process_document(document, languages=None):
     document.save(update_fields=['progress_stage', 'progress_percent', 'updated_at'])
 
     # Explicitly release database connection before the compute-heavy OCR candidate selection.
-    # Tesseract and OCR variant evaluation run for 30-90s with zero DB interaction.
+    # Tesseract and OCR variant evaluation run without needing an open DB socket.
     db_connections.close_all()
     selected, candidates = select_ocr_candidate(scan_image, languages=languages)
     close_old_connections()
