@@ -1,21 +1,129 @@
-import { useEffect, useRef, useState } from 'react'
-import { Copy, Download, FileText, Loader2, Sparkles, Upload } from 'lucide-react'
-import { autocorrectDocument, exportDocument, getDocument, pollDocumentStatus, saveDocumentCorrection, uploadDocument } from './services/documentService'
+import { useEffect, useState } from 'react'
+import { Route, Routes, Navigate } from 'react-router-dom'
 
-const FORMATS = ['txt', 'docx', 'pdf']
-const ACCEPTED = '.jpg,.jpeg,.png,.webp,.pdf,.docx,.doc'
-const downloadText = (text) => { const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' })); Object.assign(document.createElement('a'), { href: url, download: 'docuscan-text.txt' }).click(); URL.revokeObjectURL(url) }
+import { LanguageProvider } from './i18n'
+import { AuthProvider } from './context/AuthContext'
+
+import PrivateRoute from './components/PrivateRoute'
+import AuthRoute from './components/AuthRoute'
+import AppLayout from './components/AppLayout'
+import AuthLayout from './components/AuthLayout'
+
+import Landing from './pages/Landing'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Dashboard from './pages/Dashboard'
+import NewScan from './pages/NewScan'
+import Documents from './pages/Documents'
+import WorkspaceDetail from './pages/WorkspaceDetail'
+import Settings from './pages/Settings'
+
+function AppContent({ theme, setTheme }) {
+  return (
+    <Routes>
+      {/* ── Public ── */}
+      <Route path="/" element={<Landing />} />
+
+      {/* ── Auth pages (no sidebar, no app nav) ── */}
+      <Route
+        path="/login"
+        element={
+          <AuthRoute>
+            <AuthLayout>
+              <Login />
+            </AuthLayout>
+          </AuthRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <AuthRoute>
+            <AuthLayout>
+              <Register />
+            </AuthLayout>
+          </AuthRoute>
+        }
+      />
+
+      {/* ── Authenticated app pages (sidebar + navbar) ── */}
+      <Route
+        path="/dashboard"
+        element={
+          <PrivateRoute>
+            <AppLayout theme={theme} setTheme={setTheme}>
+              <Dashboard />
+            </AppLayout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/scan"
+        element={
+          <PrivateRoute>
+            <AppLayout theme={theme} setTheme={setTheme}>
+              <NewScan />
+            </AppLayout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/documents"
+        element={
+          <PrivateRoute>
+            <AppLayout theme={theme} setTheme={setTheme}>
+              <Documents />
+            </AppLayout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/documents/:id"
+        element={
+          <PrivateRoute>
+            <AppLayout theme={theme} setTheme={setTheme}>
+              <WorkspaceDetail />
+            </AppLayout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <PrivateRoute>
+            <AppLayout theme={theme} setTheme={setTheme}>
+              <Settings theme={theme} setTheme={setTheme} />
+            </AppLayout>
+          </PrivateRoute>
+        }
+      />
+
+      {/* ── Catch-all ── */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
 
 export default function App() {
-  const input = useRef(null); const [file, setFile] = useState(null); const [job, setJob] = useState(null)
-  const [text, setText] = useState(''); const [original, setOriginal] = useState(''); const [message, setMessage] = useState('Upload a document to begin.'); const [busy, setBusy] = useState(false)
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem('docuscan-theme') || 'dark'
+  )
+
   useEffect(() => {
-    if (!job?.id || ['completed', 'failed'].includes(job.status)) return undefined
-    const timer = setInterval(async () => { try { const status = await pollDocumentStatus(job.id); setJob(c => ({ ...c, ...status })); setMessage(status.progress_stage || 'Processing…'); if (status.status === 'completed') { const result = await getDocument(job.id); const extracted = result.extracted_text || ''; setText(extracted); setOriginal(extracted); setJob(result); setMessage('Extraction complete. Temporary files are removed automatically.'); } if (status.status === 'failed') setMessage(status.failure_reason || 'Processing failed.'); } catch { setMessage('Could not check processing status.') } }, 1200)
-    return () => clearInterval(timer)
-  }, [job?.id, job?.status])
-  async function upload() { if (!file || busy) return; setBusy(true); setText(''); setOriginal(''); setMessage('Uploading…'); try { setJob(await uploadDocument(file)); setMessage('Queued for extraction…') } catch (e) { setMessage(e.response?.data?.uploaded_file?.[0] || e.response?.data?.detail || 'Upload failed.') } finally { setBusy(false) } }
-  async function correct() { if (!job || !text.trim()) return; setBusy(true); try { const result = await autocorrectDocument(job.id, text); setText(result.corrected_text); setMessage(`${result.changes_count} safe OCR cleanup change(s) suggested.`) } catch { setMessage('Auto-correction could not be completed.') } finally { setBusy(false) } }
-  async function exportFile(format) { if (!job) return; setBusy(true); try { if (text !== original) await saveDocumentCorrection(job.id, text); if (format === 'txt') return downloadText(text); const result = await exportDocument(job.id, format, 'clean'); if (!result.file) throw new Error(); window.open(result.file, '_blank', 'noopener,noreferrer') } catch { setMessage(`Could not create ${format.toUpperCase()} export.`) } finally { setBusy(false) } }
-  return <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100 sm:px-8"><section className="mx-auto max-w-5xl"><header className="mb-10 text-center"><p className="text-sm font-bold uppercase tracking-[.25em] text-teal-400">Private temporary processing</p><h1 className="mt-3 text-4xl font-black sm:text-5xl">DocuScan AI</h1><p className="mx-auto mt-4 max-w-2xl text-slate-400">Upload → extract → safely clean up OCR text → edit → copy or download. No account and no document history.</p></header><section className="rounded-3xl border border-slate-800 bg-slate-900 p-5 sm:p-8"><input ref={input} className="hidden" type="file" accept={ACCEPTED} onChange={e => setFile(e.target.files?.[0] || null)} /><button type="button" onClick={() => input.current?.click()} className="flex w-full flex-col items-center rounded-2xl border-2 border-dashed border-slate-700 px-6 py-10 hover:border-teal-500"><Upload className="mb-3 text-teal-400" size={32}/><span className="font-bold">{file ? file.name : 'Choose a document'}</span><span className="mt-2 text-sm text-slate-400">JPG, PNG, WEBP, PDF, or DOCX · up to 15 MB</span></button><button disabled={!file || busy} onClick={upload} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-500 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{busy || job?.status === 'processing' ? <Loader2 className="animate-spin" size={18}/> : <FileText size={18}/>}Extract text</button><p className="mt-4 text-center text-sm text-slate-400">{message}</p></section><section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900 p-5 sm:p-8"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-extrabold">Editable extracted text</h2><div className="flex gap-2"><button disabled={!text || busy} onClick={correct} className="inline-flex items-center gap-2 rounded-lg border border-teal-500/40 px-3 py-2 text-sm font-bold text-teal-300 disabled:opacity-50"><Sparkles size={16}/>Auto-correct</button><button disabled={!text} onClick={() => navigator.clipboard.writeText(text).then(() => setMessage('Copied to clipboard.'))} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm font-bold disabled:opacity-50"><Copy size={16}/>Copy</button></div></div>{original && text !== original && <p className="mb-3 text-xs text-amber-300">Showing edits or suggested corrections. Original OCR remains available until this temporary job expires.</p>}<textarea value={text} onChange={e => setText(e.target.value)} placeholder="Your extracted text will appear here." className="min-h-[340px] w-full rounded-2xl border border-slate-700 bg-slate-950 p-4 font-mono text-sm leading-relaxed outline-none focus:border-teal-400"/><div className="mt-4 grid gap-2 sm:grid-cols-3">{FORMATS.map(format => <button key={format} disabled={!text || busy} onClick={() => exportFile(format)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-bold hover:border-teal-400 disabled:opacity-50"><Download size={16}/>Download {format.toUpperCase()}</button>)}</div></section></section></main>
+    const isDark = theme === 'dark'
+    document.documentElement.classList.toggle('dark', isDark)
+    document.documentElement.setAttribute('data-theme', theme)
+    document.body.className = isDark
+      ? 'dark bg-[#07111a] text-slate-100'
+      : 'bg-[#f8fafc] text-slate-900'
+    localStorage.setItem('docuscan-theme', theme)
+  }, [theme])
+
+  return (
+    <LanguageProvider>
+      <AuthProvider>
+        <AppContent theme={theme} setTheme={setTheme} />
+      </AuthProvider>
+    </LanguageProvider>
+  )
 }

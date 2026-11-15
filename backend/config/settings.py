@@ -264,7 +264,6 @@ os.makedirs(MEDIA_ROOT / 'exports', exist_ok=True)
 # Production security and upload constraints
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
-TEMP_DOCUMENT_RETENTION_HOURS = int(os.environ.get('TEMP_DOCUMENT_RETENTION_HOURS', '1'))
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 if not DEBUG:
     SESSION_COOKIE_SECURE = True

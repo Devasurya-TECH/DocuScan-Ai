@@ -21,12 +21,6 @@ def extract_pdf_data(file_path):
         total_pages (int), pages_data (list of dicts)
     """
     reader = PdfReader(str(file_path))
-    if reader.is_encrypted:
-        try:
-            if reader.decrypt('') == 0:
-                raise ValueError('Password-protected PDFs cannot be processed.')
-        except Exception as exc:
-            raise ValueError('Password-protected PDFs cannot be processed.') from exc
     total_pages = len(reader.pages)
     pages = []
 
@@ -53,22 +47,3 @@ def extract_pdf_data(file_path):
         })
 
     return total_pages, pages
-
-
-def render_pdf_page(file_path, page_index, scale=1.5):
-    """Render one scanned PDF page at a time, avoiding an entire-PDF memory spike."""
-    try:
-        import pypdfium2 as pdfium
-    except ImportError as exc:
-        raise ValueError('Scanned PDF support requires pypdfium2.') from exc
-    pdf = pdfium.PdfDocument(str(file_path))
-    try:
-        page = pdf[page_index]
-        try:
-            bitmap = page.render(scale=scale)
-            pil = bitmap.to_pil()
-            return np.array(pil.convert('RGB'))[:, :, ::-1].copy()
-        finally:
-            page.close()
-    finally:
-        pdf.close()
